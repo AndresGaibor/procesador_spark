@@ -1,0 +1,15 @@
+{
+  "nombre": "Ventas incrementales",
+  "entrada": {
+    "formato": "csv",
+    "modo_esquema": "inferir",
+    "opciones": {"header": true}
+  },
+  "pasos": [],
+  "incremental": {
+    "activo": true,
+    "duplicados": "ignorar",
+    "claves": ["id"]
+  },
+  "salida": {"formato": "parquet", "modo": "append"}
+}

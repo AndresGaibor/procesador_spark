@@ -1,0 +1,4 @@
+id,fecha,cliente,ciudad,producto,categoria,cantidad,precio,descuento,total,metodo_pago,vendedor
+1,2026-07-01,Ana Quito,Quito,Té verde,Bebidas,2,4.50,0.00,9.00,Efectivo,María
+2,2026-07-01,Luis Loja,Loja,Vitamina C,Suplementos,1,12.00,2.00,10.00,Tarjeta,José
+3,2026-07-02,Ana Quito,Quito,Té verde,Bebidas,1,4.50,0.00,4.50,Efectivo,María

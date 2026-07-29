@@ -1,0 +1,16 @@
+{
+  "nombre": "Ventas inferidas",
+  "entrada": {
+    "formato": "csv",
+    "modo_esquema": "inferir",
+    "opciones": {"header": true},
+    "inferir_tipos": true,
+    "normalizar_nombres_columnas": true,
+    "tipos_forzados": {"id": "entero", "total": "decimal(12,2)"}
+  },
+  "pasos": [
+    {"tipo": "eliminar_duplicados", "columnas": ["id"]},
+    {"tipo": "reparticionar", "cantidad": 1}
+  ],
+  "salida": {"formato": "parquet", "modo": "error"}
+}

@@ -1,0 +1,20 @@
+{
+  "nombre": "Ventas estrictas",
+  "version": 1,
+  "entrada": {
+    "formato": "csv",
+    "modo_esquema": "estricto",
+    "opciones": {"header": true, "mode": "FAILFAST"}
+  },
+  "pasos": [
+    {"tipo": "convertir_tipo", "columna": "fecha", "destino": "fecha", "formato": "yyyy-MM-dd"},
+    {"tipo": "normalizar_texto", "columnas": ["cliente", "ciudad"], "operaciones": ["trim"]},
+    {"tipo": "filtrar", "expresion": "total > 0"}
+  ],
+  "salida": {
+    "formato": "parquet",
+    "modo": "error",
+    "compresion": "snappy"
+  },
+  "auditoria": {"contar_registros": true}
+}
