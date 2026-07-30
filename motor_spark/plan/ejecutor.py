@@ -29,6 +29,7 @@ from motor_spark.dataflow_script.publicacion import (
     StagingManager,
     UriLib,
     UriParseResult,
+    decodificar_clave_privada_base64,
 )
 from motor_spark.plan.modelos import (
     Agregar,
@@ -697,12 +698,45 @@ class EjecutorPlanDataflow:
                 f"Destino {uri.ruta!r} no está en allowlist de {conexion.nombre!r}"
             )
 
-        credencial = self._secretos.obtener_obligatorio(conexion.secreto_nombre)
-        usuario, separador, password = credencial.partition(":")
-        if not separador or not usuario or not password:
-            raise ErrorEjecucionPlan(
-                f"Secreto {conexion.secreto_nombre!r} debe usar USUARIO:CLAVE"
+        # La autenticación se resuelve antes de materializar el CSV para no
+        # invertir tiempo de Spark si falta la clave o una credencial requerida.
+        parametros_auth: dict[str, Any]
+        if conexion.secreto_clave_privada_nombre:
+            clave_b64 = self._secretos.obtener_obligatorio(
+                conexion.secreto_clave_privada_nombre
             )
+            passphrase = (
+                self._secretos.obtener_obligatorio(conexion.secreto_passphrase_nombre)
+                if conexion.secreto_passphrase_nombre
+                else None
+            )
+            parametros_auth = {
+                "usuario": conexion.usuario,
+                "clave_privada_contenido": decodificar_clave_privada_base64(clave_b64),
+                "passphrase": passphrase,
+            }
+        elif conexion.clave_privada:
+            passphrase = (
+                self._secretos.obtener_obligatorio(conexion.secreto_passphrase_nombre)
+                if conexion.secreto_passphrase_nombre
+                else None
+            )
+            parametros_auth = {
+                "usuario": conexion.usuario,
+                "clave_privada": Path(conexion.clave_privada).expanduser(),
+                "passphrase": passphrase,
+            }
+        else:
+            credencial = self._secretos.obtener_obligatorio(conexion.secreto_nombre)
+            usuario, separador, password = credencial.partition(":")
+            if not separador or not usuario or not password:
+                raise ErrorEjecucionPlan(
+                    f"Secreto {conexion.secreto_nombre!r} debe usar USUARIO:CLAVE"
+                )
+            parametros_auth = {
+                "usuario": usuario,
+                "password": password,
+            }
 
         base_temporal = (
             Path(tempfile.gettempdir()) / "motor-spark-dataflow" / self._ejecucion_id
@@ -724,8 +758,7 @@ class EjecutorPlanDataflow:
             with PublicacionSftp(
                 host=conexion.host,
                 puerto=conexion.puerto,
-                usuario=usuario,
-                password=password,
+                **parametros_auth,
             ) as publicador:
                 return publicador.publicar(
                     staged,

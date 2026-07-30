@@ -86,7 +86,7 @@ python motor.py \
   --dataflow-script-contenido "$SCRIPT_QLIK" \
   --conexiones-contenido "$CONEXIONES_JSON" \
   --secreto "POSTGRES_BANCOLOMBIA=usuario:clave" \
-  --secreto "SFTP_BANCOLOMBIA=usuario:clave" \
+  --secreto "SFTP_PRIVATE_KEY_B64=$SFTP_PRIVATE_KEY_B64" \
   --ejecucion-id bancolombia-inline-001
 ```
 
@@ -131,7 +131,8 @@ El script solo referencia nombres lógicos de `LIB CONNECT TO` y `lib://`. Las U
       "nombre": "Bancolombia prueba:SFTP",
       "host": "sftp.internal",
       "puerto": 22,
-      "secreto_nombre": "SFTP_BANCOLOMBIA",
+      "usuario": "sftpqlik",
+      "secreto_clave_privada_nombre": "SFTP_PRIVATE_KEY_B64",
       "ruta_base": "/upload",
       "allowlist": [
         {"esquema": "", "tabla": "ventas_curadas.csv", "campos": []}
@@ -141,7 +142,23 @@ El script solo referencia nombres lógicos de `LIB CONNECT TO` y `lib://`. Las U
 }
 ```
 
-Los secretos no se guardan en el catálogo. El resolvedor admite variables de entorno o valores inyectados mediante el contrato seguro de ejecución. Para usuario y contraseña SFTP, el valor esperado es `usuario:password`.
+Los secretos no se guardan en el catálogo. El resolvedor admite variables de entorno o valores inyectados mediante `--secreto`.
+
+SFTP admite exactamente uno de estos modos:
+
+- `secreto_nombre`: secreto heredado con formato `usuario:password`.
+- `clave_privada`: ruta local a una clave privada.
+- `secreto_clave_privada_nombre`: secreto con el contenido completo de la clave privada codificado como Base64. Este modo no crea archivos temporales y requiere `usuario`.
+
+Para generar el parámetro de una clave privada en Fish/macOS:
+
+```fish
+set -l SFTP_PRIVATE_KEY_B64 (
+    openssl base64 -A -in "$HOME/Downloads/sftp_debian" | string collect
+)
+```
+
+Base64 solo transporta el contenido en una línea; no cifra la clave. Pasarla mediante `--secreto` cumple el contrato solicitado, pero puede ser visible temporalmente en la lista de procesos. En producción es preferible usar una variable de entorno o el almacén de secretos de TMC con el mismo nombre lógico.
 
 ## Construcciones soportadas
 
@@ -177,6 +194,8 @@ Construcciones como `UNION`, `RIGHT JOIN`, `FULL JOIN`, `HAVING`, `CASE`, SQL li
 ### SFTP
 
 - Paramiko carga las claves conocidas del sistema y usa `RejectPolicy`; nunca se usa `AutoAddPolicy`.
+- Las claves inline se decodifican desde Base64 y se cargan con `StringIO`; no se escriben en archivos temporales.
+- Se detectan claves OpenSSH Ed25519, ECDSA y RSA. Una passphrase opcional se referencia mediante `secreto_passphrase_nombre`.
 - El host debe estar registrado previamente en `known_hosts` del usuario que ejecuta el Remote Engine.
 - La publicación carga primero `archivo.partial` con confirmación y luego lo renombra al nombre definitivo.
 - Ante error se intenta eliminar el parcial y se cierran SFTP y SSH sin ocultar la causa original.

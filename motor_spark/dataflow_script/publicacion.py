@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import csv
 import hashlib
 import io
@@ -22,6 +24,43 @@ try:
     HAS_PARAMIKO = True
 except ImportError:
     HAS_PARAMIKO = False
+
+
+LIMITE_CLAVE_PRIVADA_BYTES = 1024 * 1024
+
+
+def decodificar_clave_privada_base64(valor: str) -> str:
+    """Decodifica una clave privada transportada como Base64 de una sola línea.
+
+    El Base64 evita que el CLI y Fish alteren saltos de línea. El resultado se
+    conserva solo en memoria y nunca se escribe a un archivo temporal.
+    """
+    if not isinstance(valor, str) or not valor:
+        raise ValueError("La clave privada Base64 está vacía")
+    try:
+        contenido_bytes = base64.b64decode(valor, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("La clave privada no contiene Base64 válido") from exc
+    if not contenido_bytes or len(contenido_bytes) > LIMITE_CLAVE_PRIVADA_BYTES:
+        raise ValueError("Tamaño de clave privada Base64 inválido")
+    try:
+        contenido = contenido_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError("La clave privada Base64 no contiene texto UTF-8") from exc
+
+    lineas = contenido.strip().splitlines()
+    if len(lineas) < 3:
+        raise ValueError("Contenido de clave privada incompleto")
+    encabezado = lineas[0].strip()
+    pie = lineas[-1].strip()
+    if not (
+        encabezado.startswith("-----BEGIN ") and encabezado.endswith("PRIVATE KEY-----")
+    ):
+        raise ValueError("Encabezado de clave privada no reconocido")
+    etiqueta = encabezado.removeprefix("-----BEGIN ").removesuffix("-----")
+    if pie != f"-----END {etiqueta}-----":
+        raise ValueError("Cierre de clave privada no coincide con el encabezado")
+    return contenido
 
 
 class EstadoPublicacion(Enum):
@@ -295,7 +334,9 @@ class PublicacionSftp:
         puerto: int,
         usuario: str,
         clave_privada: Path | None = None,
+        clave_privada_contenido: str | None = None,
         password: str | None = None,
+        passphrase: str | None = None,
         timeout: float = 30.0,
     ):
         if not HAS_PARAMIKO:
@@ -303,11 +344,54 @@ class PublicacionSftp:
         self._host = host
         self._puerto = puerto
         self._usuario = usuario
+        modos = (bool(password), bool(clave_privada), bool(clave_privada_contenido))
+        if sum(modos) != 1:
+            raise ValueError(
+                "PublicacionSftp requiere exactamente password, clave_privada "
+                "o clave_privada_contenido"
+            )
         self._clave_privada = clave_privada
+        self._clave_privada_contenido = clave_privada_contenido
         self._password = password
+        self._passphrase = passphrase
         self._timeout = timeout
         self._cliente: paramiko.SSHClient | None = None
         self._sftp: paramiko.SFTPClient | None = None
+
+    @staticmethod
+    def _cargar_clave_desde_contenido(
+        contenido: str,
+        passphrase: str | None,
+    ):
+        """Detecta Ed25519/ECDSA/RSA sin crear archivos temporales."""
+        candidatos = [
+            paramiko.Ed25519Key,
+            paramiko.ECDSAKey,
+            paramiko.RSAKey,
+        ]
+        dss = getattr(paramiko, "DSSKey", None)
+        if dss is not None:
+            candidatos.append(dss)
+
+        errores: list[Exception] = []
+        for clase in candidatos:
+            try:
+                return clase.from_private_key(
+                    io.StringIO(contenido),
+                    password=passphrase,
+                )
+            except paramiko.PasswordRequiredException as exc:
+                if passphrase is None:
+                    raise ValueError(
+                        "La clave privada está cifrada y requiere passphrase"
+                    ) from exc
+                errores.append(exc)
+            except (paramiko.SSHException, ValueError) as exc:
+                errores.append(exc)
+
+        raise ValueError(
+            "Formato de clave privada SFTP no soportado o passphrase incorrecta"
+        ) from (errores[-1] if errores else None)
 
     def _crear_cliente(self) -> paramiko.SSHClient:
         """Crea un cliente que rechaza hosts no registrados.
@@ -324,15 +408,39 @@ class PublicacionSftp:
     def conectar(self) -> None:
         self._cliente = self._crear_cliente()
         try:
-            if self._clave_privada:
-                clave = paramiko.RSAKey.from_private_key_file(  # type: ignore
-                    str(self._clave_privada)
+            if self._clave_privada_contenido:
+                clave_memoria = self._cargar_clave_desde_contenido(
+                    self._clave_privada_contenido,
+                    self._passphrase,
                 )
                 self._cliente.connect(
                     self._host,
                     port=self._puerto,
                     username=self._usuario,
-                    pkey=clave,
+                    pkey=clave_memoria,
+                    timeout=self._timeout,
+                    look_for_keys=False,
+                    allow_agent=False,
+                )
+            elif self._clave_privada:
+                # ``key_filename`` delega a Paramiko la detección del formato
+                # OpenSSH/RSA/ECDSA/Ed25519. Cargar RSAKey manualmente rompería
+                # claves modernas como la utilizada por este SFTP.
+                clave = self._clave_privada.expanduser()
+                if not clave.is_file():
+                    raise FileNotFoundError(
+                        f"Clave privada SFTP no encontrada: {clave}"
+                    )
+                if clave.stat().st_mode & 0o077:
+                    raise PermissionError(
+                        "La clave privada SFTP debe tener permisos 600 o más restrictivos"
+                    )
+                self._cliente.connect(
+                    self._host,
+                    port=self._puerto,
+                    username=self._usuario,
+                    key_filename=str(clave),
+                    passphrase=self._passphrase,
                     timeout=self._timeout,
                     look_for_keys=False,
                     allow_agent=False,
