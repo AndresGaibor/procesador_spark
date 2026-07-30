@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "descripcion": "Catalogo de conexiones para tests de Dataflow - sin secretos hardcoded",
+  "jdbc": [
+    {
+      "tipo": "jdbc",
+      "nombre": "local_postgres",
+      "url": "jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/testdb",
+      "driver": "org.postgresql.Driver",
+      "secreto_nombre": "POSTGRES_PASSWORD",
+      "allowlist": [
+        {
+          "esquema": "esquema1",
+          "tabla": "tabla_a",
+          "campos": ["id", "nombre", "descripcion"]
+        },
+        {
+          "esquema": "esquema2",
+          "tabla": "tabla_b",
+          "campos": ["id", "descripcion"]
+        }
+      ],
+      "propiedades": {
+        "ssl": "false",
+        "connectTimeout": "30"
+      }
+    }
+  ],
+  "locales": [
+    {
+      "tipo": "local",
+      "nombre": "local_files",
+      "ruta_base": "tests/recursos/dataflow/datos",
+      "allowlist": [
+        {
+          "esquema": "",
+          "tabla": "ventas.csv",
+          "campos": ["id", "cliente", "monto", "fecha"]
+        },
+        {
+          "esquema": "",
+          "tabla": "entrada.csv",
+          "campos": ["id", "nombre", "valor"]
+        },
+        {
+          "esquema": "",
+          "tabla": "productos.csv",
+          "campos": ["id", "precio", "cantidad", "nombre", "region"]
+        },
+        {
+          "esquema": "",
+          "tabla": "clientes.csv",
+          "campos": ["id", "nombre", "email"]
+        },
+        {
+          "esquema": "",
+          "tabla": "pedidos.csv",
+          "campos": ["cliente_id", "monto", "fecha"]
+        },
+        {
+          "esquema": "",
+          "tabla": "parte1.csv",
+          "campos": ["id", "nombre"]
+        },
+        {
+          "esquema": "",
+          "tabla": "parte2.csv",
+          "campos": ["id", "nombre"]
+        }
+      ]
+    }
+  ],
+  "sftp": [
+    {
+      "tipo": "sftp",
+      "nombre": "sftp_dataflow",
+      "host": "localhost",
+      "puerto": 2222,
+      "secreto_nombre": "SFTP_PASSWORD",
+      "ruta_base": "/upload/dataflow",
+      "allowlist": [
+        {
+          "esquema": "",
+          "tabla": "salida",
+          "campos": []
+        }
+      ]
+    }
+  ]
+}

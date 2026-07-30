@@ -1,0 +1,6 @@
+-- Script valido: CONCATENATE
+tabla1:
+LOAD id, nombre FROM "lib://local_files/datos/parte1.csv";
+
+CONCATENATE (tabla1)
+LOAD id, nombre FROM "lib://local_files/datos/parte2.csv";

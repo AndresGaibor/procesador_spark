@@ -1,0 +1,8 @@
+-- Script con producto cartesiano potencial (debe ser detectado por validacion)
+riesgo:
+SELECT
+    a.id,
+    b.id AS id_b
+FROM "tabla_a" a
+LEFT JOIN "tabla_b" b ON a.id = b.id
+;

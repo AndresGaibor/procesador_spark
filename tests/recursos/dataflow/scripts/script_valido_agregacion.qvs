@@ -1,0 +1,21 @@
+-- Script valido: Agregacion con GROUP BY
+ventas:
+LOAD
+    region,
+    producto,
+    monto
+FROM "lib://local_files/datos/ventas.csv";
+
+resumen:
+LOAD
+    region,
+    SUM(monto) AS total_region,
+    AVG(monto) AS promedio_region,
+    COUNT(*) AS cantidad_ventas,
+    MIN(monto) AS monto_minimo,
+    MAX(monto) AS monto_maximo
+RESIDENT ventas
+GROUP BY region, producto
+;
+
+DROP TABLE ventas;

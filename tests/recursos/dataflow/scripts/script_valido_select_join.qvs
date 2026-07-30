@@ -1,0 +1,10 @@
+-- Script valido: SELECT con JOIN
+etiqueta1:
+SELECT
+    a.id,
+    a.nombre,
+    b.descripcion
+FROM "esquema1.tabla_a" a
+LEFT JOIN "esquema2.tabla_b" b ON a.id = b.id
+WHERE a.id > 100
+;

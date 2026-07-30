@@ -1,0 +1,2 @@
+-- Script invalido: SELECT sin FROM
+SELECT id, nombre;

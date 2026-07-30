@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "descripcion": "Catalogo vacio para tests de casos sin conexiones",
+  "jdbc": [],
+  "locales": [],
+  "sftp": []
+}

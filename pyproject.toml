@@ -10,6 +10,8 @@ requires-python = ">=3.10"
 dependencies = [
   "pydantic>=2,<3",
   "pyspark",
+  "lark>=1.0",
+  "paramiko>=3.0",
 ]
 
 [tool.pytest.ini_options]

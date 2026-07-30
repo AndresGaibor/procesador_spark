@@ -1,0 +1,13 @@
+-- Script valido: Expresiones aritmeticas y funciones
+datos:
+LOAD
+    id,
+    precio,
+    cantidad,
+    precio * cantidad AS total,
+    TRIM(nombre) AS nombre_limpio,
+    UPPER(region) AS region_mayus,
+    IF(cantidad > 10, 'MAYORISTA', 'MINORISTA') AS tipo_cliente
+FROM "lib://local_files/datos/productos.csv"
+WHERE precio > 0 AND cantidad >= 1
+;

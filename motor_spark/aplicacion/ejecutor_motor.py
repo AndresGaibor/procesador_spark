@@ -10,7 +10,7 @@ from motor_spark.aplicacion.resultado_ejecucion import (
     construir_resultado_exito,
 )
 from motor_spark.compartido.eventos_consola import emitir
-from motor_spark.configuracion.argumentos import ArgumentosEjecucion
+from motor_spark.configuracion.argumentos import ArgumentosDataflowScript, ArgumentosEjecucion
 from motor_spark.configuracion.cargador_receta import cargar_receta
 from motor_spark.dominio.esquemas import resolver_esquema_entrada
 from motor_spark.infraestructura.resultados.escritor_json import guardar_resultado
@@ -50,7 +50,12 @@ def _ejecutar_carga_completa(
         procesados.unpersist()
 
 
-def ejecutar_motor(argumentos: ArgumentosEjecucion) -> int:
+def ejecutar_motor(argumentos: ArgumentosEjecucion | ArgumentosDataflowScript) -> int:
+    if isinstance(argumentos, ArgumentosDataflowScript):
+        from motor_spark.aplicacion.ejecutor_dataflow import ejecutar_dataflow
+        return ejecutar_dataflow(argumentos)
+
+    assert isinstance(argumentos, ArgumentosEjecucion)
     spark: Any | None = None
 
     try:

@@ -7,7 +7,7 @@ from motor_spark.configuracion.argumentos import analizar_argumentos
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    argumentos = analizar_argumentos(argv)
+    argumentos = analizar_argumentos(argv) # receta, entrada, salida, esquema, resultado, ejecucion_id
     from motor_spark.aplicacion.ejecutor_motor import ejecutar_motor
     return ejecutar_motor(argumentos)
 
