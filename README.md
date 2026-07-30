@@ -47,6 +47,10 @@ python motor.py \
   --ejecucion-id ejec-002
 ```
 
+## Scripts Qlik Dataflow
+
+El motor también puede compilar y ejecutar scripts exportados por Qlik Dataflow mediante un plan Spark tipado, determinista y fail-closed. La guía completa de catálogo, seguridad, compilación y ejecución está en [`docs/dataflow.md`](docs/dataflow.md).
+
 ## Estructura
 
 ```text
@@ -175,4 +179,3 @@ Por seguridad, `overwrite` sobre rutas locales solo está permitido dentro de:
 ```
 
 El motor prepara esa carpeta con grupo `spark`, bit setgid y permisos `2770`, y luego usa `append` internamente para impedir que Spark elimine los permisos preparados.
-# procesador_spark

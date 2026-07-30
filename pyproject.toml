@@ -27,7 +27,19 @@ markers = [
 source = ["motor_spark"]
 omit = ["tests/*"]
 
+
+[tool.coverage.report]
+fail_under = 75
+show_missing = true
+skip_covered = true
+
 [tool.setuptools.packages.find]
 include = ["motor_spark*"]
 exclude = ["legacy*", "tests*", "docs*"]
 namespaces = false
+
+[tool.ruff]
+extend-exclude = ["legacy", ".venv", "dist", "build"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["B017", "RUF012", "SIM117"]
