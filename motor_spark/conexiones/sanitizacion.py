@@ -29,7 +29,6 @@ class SanitizadorInput:
     @classmethod
     def sanitizar_ruta_local(cls, valor: str, ruta_base: str | None = None) -> str:
         import os
-        import urllib.parse
 
         if valor.startswith("~"):
             valor = os.path.expanduser(valor)

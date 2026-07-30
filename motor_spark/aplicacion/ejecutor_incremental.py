@@ -31,13 +31,10 @@ def ejecutar_incremental(
     configuracion_incremental: IncrementalConfig,
     configuracion_salida: SalidaConfig,
 ) -> ResultadoIncremental:
-    politica_duplicados = str(
-        configuracion_incremental.duplicados
-    ).strip().lower()
+    politica_duplicados = str(configuracion_incremental.duplicados).strip().lower()
     if politica_duplicados != "ignorar":
         raise ErrorReceta(
-            "La única política incremental "
-            "soportada actualmente es duplicados=ignorar"
+            "La única política incremental soportada actualmente es duplicados=ignorar"
         )
 
     claves = [
@@ -49,9 +46,7 @@ def ejecutar_incremental(
         raise ErrorReceta("incremental.claves no puede estar vacío")
 
     exigir_columnas(procesados, claves, 0)
-    condicion_nulos = " OR ".join(
-        f"`{clave}` IS NULL" for clave in claves
-    )
+    condicion_nulos = " OR ".join(f"`{clave}` IS NULL" for clave in claves)
     if procesados.where(condicion_nulos).limit(1).count() > 0:
         raise ErrorReceta(
             "Las claves incrementales no pueden contener valores nulos: "
@@ -62,9 +57,7 @@ def ejecutar_incremental(
     try:
         total_entrada = procesados.count()
         if total_entrada <= 0:
-            raise ErrorReceta(
-                "El lote incremental no contiene registros procesables"
-            )
+            raise ErrorReceta("El lote incremental no contiene registros procesables")
 
         lote_unico = procesados.dropDuplicates(claves).persist()
         try:
@@ -79,8 +72,7 @@ def ejecutar_incremental(
 
             if destino_existe:
                 existentes = (
-                    spark.read
-                    .format("parquet")
+                    spark.read.format("parquet")
                     .option("mergeSchema", "true")
                     .load(ruta_salida)
                     .persist()
@@ -92,20 +84,14 @@ def ejecutar_incremental(
                     )
                     exigir_columnas(existentes, claves, 0)
                     total_antes = existentes.count()
-                    claves_existentes = (
-                        existentes
-                        .select(*claves)
-                        .dropDuplicates(claves)
+                    claves_existentes = existentes.select(*claves).dropDuplicates(
+                        claves
                     )
-                    nuevos = (
-                        lote_unico
-                        .join(
-                            claves_existentes,
-                            on=claves,
-                            how="left_anti",
-                        )
-                        .persist()
-                    )
+                    nuevos = lote_unico.join(
+                        claves_existentes,
+                        on=claves,
+                        how="left_anti",
+                    ).persist()
                     nuevos_persistidos = True
                     total_nuevos = nuevos.count()
                 finally:

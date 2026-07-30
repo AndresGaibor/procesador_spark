@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Sequence
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 from motor_spark.dataflow_script.ast import (
     Etiqueta,
@@ -13,17 +14,22 @@ from motor_spark.dataflow_script.ast import (
     SentenciaSelect,
     TipoExpresion,
 )
-from motor_spark.dataflow_script.errores import ErrorDataflow, SourceLocation, SourceSpan
-from motor_spark.dataflow_script.expresiones import CompiladorExpresion, ErrorCompilacionExpresion
+from motor_spark.dataflow_script.errores import (
+    ErrorDataflow,
+    SourceLocation,
+)
+from motor_spark.dataflow_script.expresiones import (
+    CompiladorExpresion,
+    ErrorCompilacionExpresion,
+)
 
 if TYPE_CHECKING:
     from pyspark.sql import Column, DataFrame
-    from pyspark.sql import functions as F
-    from pyspark.sql import Window
 
 try:
-    from pyspark.sql import functions as pyspark_f
     from pyspark.sql import Window as pyspark_Window
+    from pyspark.sql import functions as pyspark_f
+
     HAS_PYSPARK = True
 except ImportError:
     HAS_PYSPARK = False
@@ -135,7 +141,7 @@ class ContextoEjecucionDataflow:
         if self._spark is not None:
             try:
                 return self._spark.table(nombre_tabla)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 return None
         return None
 
@@ -174,15 +180,19 @@ class ContextoEjecucionDataflow:
                 )
                 return df_izquierdo
             try:
-                condiciones = [pyspark_f.col(c) == pyspark_f.col(c) for c in campos_comunes]
+                condiciones = [
+                    pyspark_f.col(c) == pyspark_f.col(c) for c in campos_comunes
+                ]
                 from functools import reduce
+
                 from pyspark.sql.functions import and_
+
                 condicion = reduce(and_, condiciones)
                 df_resultado = df_izquierdo.join(df_derecho, condicion, how="left")
                 return df_resultado
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 self._agregar_error(
-                    f"Error en natural join: {str(e)}",
+                    f"Error en natural join: {e!s}",
                     "EXEC_NATURAL_JOIN_ERROR",
                 )
                 return df_izquierdo
@@ -208,9 +218,9 @@ class ContextoEjecucionDataflow:
             condicion = pyspark_f.col(col_izq) == pyspark_f.col(col_der)
             df_resultado = df_izquierdo.join(df_derecho, condicion, how="left")
             return df_resultado
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self._agregar_error(
-                f"Error en join: {str(e)}",
+                f"Error en join: {e!s}",
                 "EXEC_JOIN_ERROR",
             )
             return df_izquierdo
@@ -229,9 +239,7 @@ class ContextoEjecucionDataflow:
                 if filtro_compuesto is None:
                     filtro_compuesto = columna_filtro
                 else:
-                    filtro_compuesto = pyspark_f.and_(
-                        filtro_compuesto, columna_filtro
-                    )
+                    filtro_compuesto = pyspark_f.and_(filtro_compuesto, columna_filtro)
             except ErrorCompilacionExpresion as e:
                 self._agregar_error(
                     f"Error compilando filtro: {e.mensaje}",
@@ -275,7 +283,9 @@ class ContextoEjecucionDataflow:
         if not expresiones_select:
             return df.groupBy(*expresiones_grupo).count()
 
-        return df.groupBy(*expresiones_grupo).agg(*expresiones_select[len(expresiones_grupo):])
+        return df.groupBy(*expresiones_grupo).agg(
+            *expresiones_select[len(expresiones_grupo) :]
+        )
 
     def _ejecutar_proyeccion(
         self, df: DataFrame, proyecciones: Sequence[ProjectionItem]
@@ -319,9 +329,7 @@ class ContextoEjecucionDataflow:
             return f"str_{expr.valor}"
         return "expr"
 
-    def _ejecutar_load(
-        self, sentencia: SentenciaLoad, nombre_etiqueta: str
-    ) -> None:
+    def _ejecutar_load(self, sentencia: SentenciaLoad, nombre_etiqueta: str) -> None:
         if self._spark is None:
             self._agregar_error("Spark no esta inicializado", "EXEC_SPARK_NOT_INIT")
             return
@@ -337,9 +345,9 @@ class ContextoEjecucionDataflow:
         elif sentencia.ruta:
             try:
                 df = self._spark.read.load(sentencia.ruta)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 self._agregar_error(
-                    f"Error cargando tabla: {str(e)}",
+                    f"Error cargando tabla: {e!s}",
                     "EXEC_LOAD_ERROR",
                 )
                 return
@@ -417,15 +425,11 @@ class ContextoEjecucionDataflow:
 
             if columnas_faltantes_origen:
                 for col_name in columnas_faltantes_origen:
-                    df_origen = df_origen.withColumn(
-                        col_name, pyspark_f.lit(None)
-                    )
+                    df_origen = df_origen.withColumn(col_name, pyspark_f.lit(None))
 
             if columnas_faltantes_objetivo:
                 for col_name in columnas_faltantes_objetivo:
-                    df_objetivo = df_objetivo.withColumn(
-                        col_name, pyspark_f.lit(None)
-                    )
+                    df_objetivo = df_objetivo.withColumn(col_name, pyspark_f.lit(None))
 
         df_resultado = df_objetivo.union(df_origen.select(df_objetivo.columns))
         self.registrar_dataframe(sentencia.etiqueta_objetivo, df_resultado)
@@ -446,9 +450,17 @@ class ContextoEjecucionDataflow:
             raise RuntimeError("pyspark no disponible")
 
         particion = [pyspark_f.col(c) for c in partition_by] if partition_by else None
-        orden = [pyspark_f.col(c).asc() for c in order_by] if order_by else [pyspark_f.col("1").asc()]
+        orden = (
+            [pyspark_f.col(c).asc() for c in order_by]
+            if order_by
+            else [pyspark_f.col("1").asc()]
+        )
 
-        ventana = pyspark_Window.partitionBy(*particion).orderBy(*orden) if particion else pyspark_Window.orderBy(*orden)
+        ventana = (
+            pyspark_Window.partitionBy(*particion).orderBy(*orden)
+            if particion
+            else pyspark_Window.orderBy(*orden)
+        )
 
         return pyspark_f.rank().over(ventana)
 

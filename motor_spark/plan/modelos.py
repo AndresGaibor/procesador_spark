@@ -1,16 +1,24 @@
+"""Modelos inmutables del plan intermedio Dataflow → Spark.
+
+El plan es el contrato entre compilación y ejecución. Debe contener toda la
+información necesaria para ejecutarse sin volver a interpretar el script Qlik.
+Por esa razón las operaciones se modelan como una unión de subtipos concretos;
+serializarlas como la clase base eliminaría silenciosamente sus parámetros.
+"""
+
 from __future__ import annotations
 
 import hashlib
 import json
-import uuid
-from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Sequence
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-class TipoOperacion(Enum):
+class TipoOperacion(str, Enum):
+    """Conjunto cerrado de instrucciones que entiende el ejecutor del plan."""
+
     LEER_JDBC = "leer_jdbc"
     PROYECTAR = "proyectar"
     FILTRAR = "filtrar"
@@ -23,122 +31,221 @@ class TipoOperacion(Enum):
     CARGAR_LOCAL = "cargar_local"
 
 
-class Operacion(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
+class TipoExpresionPlan(str, Enum):
+    """Tipos estables del árbol de expresión persistido en el plan."""
 
-    id: str = Field(..., description="ID unico de la operacion")
+    COLUMNA = "columna"
+    LITERAL_NUMERO = "literal_numero"
+    LITERAL_STRING = "literal_string"
+    FUNCION = "funcion"
+    OPERACION_BINARIA = "operacion_binaria"
+    CONCATENACION = "concatenacion"
+    ALIAS = "alias"
+    WINDOW = "window"
+    WINDOW_RANK = "window_rank"
+
+
+class ExpresionPlan(BaseModel):
+    """Árbol recursivo independiente del texto y serializable a JSON."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    tipo: TipoExpresionPlan
+    valor: str
+    hijos: tuple[ExpresionPlan, ...] = Field(default_factory=tuple)
+
+
+class SeleccionPlan(BaseModel):
+    """Expresión de salida junto con el nombre visible de la columna."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    expresion: ExpresionPlan
+    alias: str | None = None
+
+
+class Operacion(BaseModel):
+    """Campos comunes; no debe usarse solo para persistir una operación."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        arbitrary_types_allowed=True,
+    )
+
+    id: str = Field(..., min_length=1, description="ID estable de la operación")
     tipo: TipoOperacion
 
 
 class LeerJdbc(Operacion):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    """Lee una tabla permitida y la registra con un nombre lógico Qlik."""
 
-    tipo: TipoOperacion = TipoOperacion.LEER_JDBC
-    conexion_nombre: str = Field(..., description="Nombre de la conexion JDBC")
-    esquema: str = Field(..., description="Esquema o base de datos")
-    tabla: str = Field(..., description="Nombre de la tabla")
-    campos: tuple[str, ...] = Field(default_factory=tuple, description="Campos a leer")
-    filtros_where: tuple[str, ...] = Field(default_factory=tuple, description="Condiciones WHERE")
+    tipo: Literal[TipoOperacion.LEER_JDBC] = TipoOperacion.LEER_JDBC
+    nombre_tabla: str = Field(..., min_length=1)
+    conexion_nombre: str = Field(..., min_length=1)
+    esquema: str = Field(..., min_length=1)
+    tabla: str = Field(..., min_length=1)
+    campos: tuple[str, ...] = Field(default_factory=tuple)
+    filtros_where: tuple[str, ...] = Field(default_factory=tuple)
 
 
 class Proyectar(Operacion):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    """Selecciona columnas y opcionalmente registra el resultado con otro nombre."""
 
-    tipo: TipoOperacion = TipoOperacion.PROYECTAR
-    tabla_origen: str = Field(..., description="Tabla origen")
-    campos: tuple[str, ...] = Field(..., description="Campos a proyectar")
-    alias: str | None = Field(default=None, description="Alias de la tabla resultado")
+    tipo: Literal[TipoOperacion.PROYECTAR] = TipoOperacion.PROYECTAR
+    tabla_origen: str = Field(..., min_length=1)
+    campos: tuple[str, ...] = Field(..., min_length=1)
+    alias: str | None = None
+    # Cada par es ``(columna_origen, alias_salida)``. Se mantiene separado de
+    # ``campos`` para no interpretar texto arbitrario mediante selectExpr.
+    aliases: tuple[tuple[str, str], ...] = Field(default_factory=tuple)
+    # ``selecciones`` es la representación completa. ``campos`` y ``aliases``
+    # permanecen para planes v1 simples y compatibilidad de API.
+    selecciones: tuple[SeleccionPlan, ...] = Field(default_factory=tuple)
+    distinct: bool = False
 
 
 class Filtrar(Operacion):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    """Aplica una condición tipada; ``condicion`` conserva planes v1."""
 
-    tipo: TipoOperacion = TipoOperacion.FILTRAR
-    tabla_origen: str = Field(..., description="Tabla a filtrar")
-    condicion: str = Field(..., description="Condicion WHERE")
+    tipo: Literal[TipoOperacion.FILTRAR] = TipoOperacion.FILTRAR
+    tabla_origen: str = Field(..., min_length=1)
+    condicion: str = ""
+    expresion: ExpresionPlan | None = None
 
 
 class Concatenar(Operacion):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    """Replica CONCATENATE por nombre de columna, incluyendo campos ausentes."""
 
-    tipo: TipoOperacion = TipoOperacion.CONCATENAR
-    tabla_objetivo: str = Field(..., description="Tabla objetivo")
-    tabla_origen: str = Field(..., description="Tabla origen")
-    noconcatenate: bool = Field(default=False, description="Si es NOCONCATENATE")
+    tipo: Literal[TipoOperacion.CONCATENAR] = TipoOperacion.CONCATENAR
+    tabla_objetivo: str = Field(..., min_length=1)
+    tabla_origen: str = Field(..., min_length=1)
+    noconcatenate: bool = False
 
 
 class Unir(Operacion):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    """Une dos tablas; NATURAL se resuelve usando todos los campos comunes."""
 
-    tipo: TipoOperacion = TipoOperacion.UNIR
-    tabla_izquierda: str = Field(..., description="Tabla izquierda del JOIN")
-    tabla_derecha: str = Field(..., description="Tabla derecha del JOIN")
-    condicion_on: str = Field(..., description="Condicion ON")
-    tipo_join: str = Field(default="LEFT", description="Tipo de JOIN")
+    tipo: Literal[TipoOperacion.UNIR] = TipoOperacion.UNIR
+    tabla_izquierda: str = Field(..., min_length=1)
+    tabla_derecha: str = Field(..., min_length=1)
+    condicion_on: str = Field(..., min_length=1)
+    tipo_join: str = Field(default="LEFT", min_length=1)
 
 
 class Agregar(Operacion):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    """Agrupa filas y calcula expresiones agregadas explícitas."""
 
-    tipo: TipoOperacion = TipoOperacion.AGREGAR
-    tabla_origen: str = Field(..., description="Tabla a agregar")
-    grupo_por: tuple[str, ...] = Field(..., description="Campos GROUP BY")
-    funciones: tuple[str, ...] = Field(..., description="Funciones de agregacion")
+    tipo: Literal[TipoOperacion.AGREGAR] = TipoOperacion.AGREGAR
+    tabla_origen: str = Field(..., min_length=1)
+    grupo_por: tuple[str, ...] = Field(..., min_length=1)
+    funciones: tuple[str, ...] = Field(default_factory=tuple)
+    selecciones: tuple[SeleccionPlan, ...] = Field(default_factory=tuple)
+    tabla_resultado: str | None = None
 
 
 class EliminarTabla(Operacion):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    """Libera una tabla lógica del registro en memoria del ejecutor."""
 
-    tipo: TipoOperacion = TipoOperacion.ELIMINAR_TABLA
-    nombre: str = Field(..., description="Nombre de la tabla a eliminar")
+    tipo: Literal[TipoOperacion.ELIMINAR_TABLA] = TipoOperacion.ELIMINAR_TABLA
+    nombre: str = Field(..., min_length=1)
 
 
 class Publicar(Operacion):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    """Publica una tabla ya calculada en un destino declarado por ``lib://``."""
 
-    tipo: TipoOperacion = TipoOperacion.PUBLICAR
-    tabla_origen: str = Field(..., description="Tabla a publicar")
-    destino: str = Field(..., description="Destino (lib://path)")
-    formato: str = Field(default="txt", description="Formato de salida")
+    tipo: Literal[TipoOperacion.PUBLICAR] = TipoOperacion.PUBLICAR
+    tabla_origen: str = Field(..., min_length=1)
+    destino: str = Field(..., min_length=1)
+    formato: str = Field(default="txt", min_length=1)
 
 
 class CargarCsv(Operacion):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    """Carga un CSV y lo registra bajo la etiqueta lógica indicada."""
 
-    tipo: TipoOperacion = TipoOperacion.CARGAR_CSV
-    ruta: str = Field(..., description="Ruta del archivo CSV")
-    tiene_header: bool = Field(default=True, description="Si tiene header")
-    delimitador: str = Field(default=",", description="Delimitador")
+    tipo: Literal[TipoOperacion.CARGAR_CSV] = TipoOperacion.CARGAR_CSV
+    nombre_tabla: str = Field(..., min_length=1)
+    ruta: str = Field(..., min_length=1)
+    tiene_header: bool = True
+    delimitador: str = Field(default=",", min_length=1, max_length=1)
 
 
 class CargarLocal(Operacion):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    """Copia una tabla RESIDENT o lee una ruta local controlada."""
 
-    tipo: TipoOperacion = TipoOperacion.CARGAR_LOCAL
-    ruta: str = Field(..., description="Ruta del archivo")
-    nombre_tabla: str = Field(..., description="Nombre para la tabla")
+    tipo: Literal[TipoOperacion.CARGAR_LOCAL] = TipoOperacion.CARGAR_LOCAL
+    ruta: str = Field(..., min_length=1)
+    nombre_tabla: str = Field(..., min_length=1)
+
+
+# La anotación concreta es deliberada: Pydantic usa esta unión para conservar
+# todos los campos al serializar y reconstruir el subtipo correcto al leer JSON.
+OperacionPlan = Annotated[
+    LeerJdbc
+    | Proyectar
+    | Filtrar
+    | Concatenar
+    | Unir
+    | Agregar
+    | EliminarTabla
+    | Publicar
+    | CargarCsv
+    | CargarLocal,
+    Field(discriminator="tipo"),
+]
 
 
 class PlanDataflow(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
+    """Plan versionado, inmutable y serializable de forma canónica."""
 
-    version: int = Field(default=1, description="Version del plan")
-    operaciones: tuple[Operacion, ...] = Field(default_factory=tuple, description="Operaciones del plan")
-    tabla_resultado: str | None = Field(default=None, description="Nombre de la tabla resultado final")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Metadata adicional")
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        arbitrary_types_allowed=True,
+    )
+
+    version: int = Field(default=1, ge=1)
+    operaciones: tuple[OperacionPlan, ...] = Field(default_factory=tuple)
+    tabla_resultado: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def _normalizar_metadata(cls, valor: Any) -> dict[str, Any]:
+        """Normaliza tipos que JSON no puede distinguir por sí solo.
+
+        El compilador usa una tupla para indicar una colección inmutable de
+        errores. JSON la representa como lista; restaurarla aquí permite que el
+        plan original y el deserializado sean estructuralmente iguales, además
+        de producir el mismo hash canónico.
+        """
+        datos = dict(valor or {})
+        if "errores" in datos:
+            datos["errores"] = tuple(datos["errores"] or ())
+        return datos
 
     def hash_determista(self) -> str:
-        import json
-        datos = self.model_dump(mode='json')
-        contenido = json.dumps(datos, sort_keys=True, default=str)
-        return hashlib.sha256(contenido.encode()).hexdigest()
+        """Calcula SHA-256 sobre JSON canónico, independiente de espacios."""
+        datos = self.model_dump(mode="json")
+        contenido = json.dumps(
+            datos,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        return hashlib.sha256(contenido.encode("utf-8")).hexdigest()
 
     def id_por_posicion(self, posicion: int) -> str | None:
+        """Devuelve el ID posicional sin lanzar IndexError fuera de rango."""
         if 0 <= posicion < len(self.operaciones):
             return self.operaciones[posicion].id
         return None
 
 
 def generar_id_estable(nombre_tabla: str, operacion: str, indice: int) -> str:
-    raw = f"{nombre_tabla}_{operacion}_{indice}"
-    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+    """Genera IDs repetibles para facilitar auditoría y comparación de planes."""
+    contenido = f"{nombre_tabla}_{operacion}_{indice}".encode()
+    return hashlib.sha256(contenido).hexdigest()[:16]
+
+
+ExpresionPlan.model_rebuild()

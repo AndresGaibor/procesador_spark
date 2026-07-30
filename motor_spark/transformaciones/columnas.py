@@ -38,9 +38,7 @@ def aplicar_renombrado(
 ) -> Any:
     exigir_columnas(datos, [paso.origen], numero_paso)
     if paso.destino in datos.columns:
-        raise ErrorReceta(
-            f"Paso {numero_paso}: ya existe {paso.destino}"
-        )
+        raise ErrorReceta(f"Paso {numero_paso}: ya existe {paso.destino}")
     return datos.withColumnRenamed(paso.origen, paso.destino)
 
 

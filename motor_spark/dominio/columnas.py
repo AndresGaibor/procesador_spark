@@ -26,8 +26,7 @@ def normalizar_nombre_columna(nombre: str) -> str:
 
     if not normalizado:
         raise ErrorReceta(
-            "El nombre de columna no contiene "
-            f"caracteres utilizables: {original!r}"
+            f"El nombre de columna no contiene caracteres utilizables: {original!r}"
         )
     if normalizado[0].isdigit():
         normalizado = f"col_{normalizado}"
@@ -45,9 +44,7 @@ def exigir_columnas(
     numero_paso: int,
 ) -> None:
     disponibles = set(datos.columns)
-    faltantes = [
-        columna for columna in columnas if columna not in disponibles
-    ]
+    faltantes = [columna for columna in columnas if columna not in disponibles]
     if faltantes:
         raise ErrorReceta(
             f"Paso {numero_paso}: columnas inexistentes: "
@@ -59,9 +56,7 @@ def normalizar_columnas_entrada(datos: Any, activar: bool) -> Any:
     if not activar:
         nombres = [str(nombre).strip() for nombre in datos.columns]
         invalidos = [
-            nombre
-            for nombre in nombres
-            if not PATRON_NOMBRE.fullmatch(nombre)
+            nombre for nombre in nombres if not PATRON_NOMBRE.fullmatch(nombre)
         ]
         if invalidos:
             raise ErrorReceta(
@@ -72,14 +67,10 @@ def normalizar_columnas_entrada(datos: Any, activar: bool) -> Any:
         return datos
 
     originales = list(datos.columns)
-    normalizados = [
-        normalizar_nombre_columna(nombre) for nombre in originales
-    ]
-    repetidos = sorted({
-        nombre
-        for nombre in normalizados
-        if normalizados.count(nombre) > 1
-    })
+    normalizados = [normalizar_nombre_columna(nombre) for nombre in originales]
+    repetidos = sorted(
+        {nombre for nombre in normalizados if normalizados.count(nombre) > 1}
+    )
     if repetidos:
         raise ErrorReceta(
             "Dos o más columnas producen el mismo "
@@ -107,9 +98,7 @@ def aplicar_tipos_forzados_entrada(
     if tipos_forzados is None:
         tipos_forzados = {}
     if not isinstance(tipos_forzados, dict):
-        raise ErrorReceta(
-            "entrada.tipos_forzados debe ser un objeto"
-        )
+        raise ErrorReceta("entrada.tipos_forzados debe ser un objeto")
     if not tipos_forzados:
         return datos
 
@@ -118,9 +107,7 @@ def aplicar_tipos_forzados_entrada(
         nombre = normalizar_nombre_columna(str(nombre_crudo))
         exigir_columnas(resultado, [nombre], 0)
         tipo_spark = convertir_tipo_spark(str(tipo_crudo))
-        expresion_convertida = F.col(nombre).cast(
-            tipo_spark.simpleString()
-        )
+        expresion_convertida = F.col(nombre).cast(tipo_spark.simpleString())
         conversion_invalida = (
             F.col(nombre).isNotNull()
             & (F.trim(F.col(nombre).cast("string")) != "")
@@ -137,8 +124,7 @@ def aplicar_tipos_forzados_entrada(
     emitir(
         "TIPOS_FORZADOS_ENTRADA="
         + ";;".join(
-            f"{normalizar_nombre_columna(str(nombre))}"
-            f"->{str(tipo).strip().lower()}"
+            f"{normalizar_nombre_columna(str(nombre))}->{str(tipo).strip().lower()}"
             for nombre, tipo in tipos_forzados.items()
         )
     )

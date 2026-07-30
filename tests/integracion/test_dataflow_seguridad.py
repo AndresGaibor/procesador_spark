@@ -7,9 +7,8 @@ import pytest
 
 from motor_spark.conexiones.cargador import cargar_catalogo
 from motor_spark.conexiones.modelos import CatalogoConexiones
-from motor_spark.dataflow_script.jdbc import ConstructorSubconsulta, leer_jdbc
-from motor_spark.dataflow_script.publicacion import UriLib, StagingManager
-from motor_spark.plan.modelos import PlanDataflow
+from motor_spark.dataflow_script.jdbc import ConstructorSubconsulta
+from motor_spark.dataflow_script.publicacion import StagingManager, UriLib
 
 pytestmark = pytest.mark.spark
 
@@ -18,7 +17,7 @@ def _skip_if_no_spark():
     if shutil.which("java") is None:
         pytest.skip("Java no instalado")
     try:
-        import pyspark
+        import pyspark  # noqa: F401 -- prueba disponibilidad opcional
     except ImportError:
         pytest.skip("PySpark no instalado")
 
@@ -106,9 +105,13 @@ class TestAllowlistEnforcement:
 
 class TestErroresSinExposicionSecretos:
     def test_error_resultado_no_contiene_secretos(self, tmp_path):
-        from motor_spark.aplicacion.ejecutor_dataflow import _construir_resultado_error_dataflow
-        from motor_spark.dataflow_script.errores import ErrorDataflow, SourceLocation, SourceSpan
+        from motor_spark.aplicacion.ejecutor_dataflow import (
+            _construir_resultado_error_dataflow,
+        )
         from motor_spark.configuracion.argumentos import ArgumentosDataflowScript
+        from motor_spark.dataflow_script.errores import (
+            ErrorDataflow,
+        )
 
         args = ArgumentosDataflowScript(
             dataflow_script="script.qvs",
@@ -127,13 +130,20 @@ class TestErroresSinExposicionSecretos:
 
         resultado = _construir_resultado_error_dataflow(args, errores)
         resultado_str = json.dumps(resultado)
-        assert "secret" not in resultado_str.lower() or "secreto" in resultado_str.lower()
-        assert "password" not in resultado_str.lower() or "POSTGRES_PASSWORD" not in resultado_str
+        assert (
+            "secret" not in resultado_str.lower() or "secreto" in resultado_str.lower()
+        )
+        assert (
+            "password" not in resultado_str.lower()
+            or "POSTGRES_PASSWORD" not in resultado_str
+        )
 
     def test_catalogo_password_no_en_resultado(self, conexion_path, tmp_path):
-        from motor_spark.aplicacion.ejecutor_dataflow import _construir_resultado_error_dataflow
-        from motor_spark.dataflow_script.errores import ErrorDataflow
+        from motor_spark.aplicacion.ejecutor_dataflow import (
+            _construir_resultado_error_dataflow,
+        )
         from motor_spark.configuracion.argumentos import ArgumentosDataflowScript
+        from motor_spark.dataflow_script.errores import ErrorDataflow
 
         args = ArgumentosDataflowScript(
             dataflow_script="script.qvs",
@@ -152,7 +162,9 @@ class TestErroresSinExposicionSecretos:
 
         resultado = _construir_resultado_error_dataflow(args, errores)
         resultado_str = json.dumps(resultado)
-        assert "secret" not in resultado_str.lower() or "secreto" in resultado_str.lower()
+        assert (
+            "secret" not in resultado_str.lower() or "secreto" in resultado_str.lower()
+        )
 
 
 class TestValidacionUriLib:

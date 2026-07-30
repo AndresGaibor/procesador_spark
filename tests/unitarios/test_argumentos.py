@@ -16,14 +16,22 @@ def test_parser_conserva_argumentos_obligatorios():
 
 
 def test_parser_acepta_contrato_actual():
-    argumentos = analizar_argumentos([
-        "--receta", "{}",
-        "--entrada", "/tmp/in.csv",
-        "--salida", "/tmp/out",
-        "--esquema", "id:entero",
-        "--resultado", "/tmp/result.json",
-        "--ejecucion-id", "e-1",
-    ])
+    argumentos = analizar_argumentos(
+        [
+            "--receta",
+            "{}",
+            "--entrada",
+            "/tmp/in.csv",
+            "--salida",
+            "/tmp/out",
+            "--esquema",
+            "id:entero",
+            "--resultado",
+            "/tmp/result.json",
+            "--ejecucion-id",
+            "e-1",
+        ]
+    )
     assert isinstance(argumentos, ArgumentosEjecucion)
     assert argumentos.receta == "{}"
     assert argumentos.entrada == "/tmp/in.csv"
@@ -34,24 +42,37 @@ def test_parser_acepta_contrato_actual():
 
 
 def test_secreto_se_conserva_solo_en_argumentos_dataflow_script():
-    dataflow = analizar_argumentos([
-        "--dataflow-script", "/tmp/script.df",
-        "--conexiones", "/tmp/conexiones.json",
-        "--ejecucion-id", "e-1",
-        "--secreto", "DB_PASSWORD=valor-privado",
-    ])
+    dataflow = analizar_argumentos(
+        [
+            "--dataflow-script",
+            "/tmp/script.df",
+            "--conexiones",
+            "/tmp/conexiones.json",
+            "--ejecucion-id",
+            "e-1",
+            "--secreto",
+            "DB_PASSWORD=valor-privado",
+        ]
+    )
 
     assert isinstance(dataflow, ArgumentosDataflowScript)
     assert dataflow.secretos == (("DB_PASSWORD", "valor-privado"),)
 
     with pytest.raises(SystemExit):
-        analizar_argumentos([
-            "--receta", "{}",
-            "--entrada", "/tmp/in.csv",
-            "--salida", "/tmp/out",
-            "--ejecucion-id", "e-1",
-            "--secreto", "DB_PASSWORD=valor-privado",
-        ])
+        analizar_argumentos(
+            [
+                "--receta",
+                "{}",
+                "--entrada",
+                "/tmp/in.csv",
+                "--salida",
+                "/tmp/out",
+                "--ejecucion-id",
+                "e-1",
+                "--secreto",
+                "DB_PASSWORD=valor-privado",
+            ]
+        )
 
 
 @pytest.mark.parametrize(
@@ -63,9 +84,12 @@ def test_secreto_se_conserva_solo_en_argumentos_dataflow_script():
 )
 def test_secreto_invalido_o_duplicado_no_expone_valor(secretos, mensaje, capsys):
     argumentos = [
-        "--dataflow-script", "/tmp/script.df",
-        "--conexiones", "/tmp/conexiones.json",
-        "--ejecucion-id", "e-1",
+        "--dataflow-script",
+        "/tmp/script.df",
+        "--conexiones",
+        "/tmp/conexiones.json",
+        "--ejecucion-id",
+        "e-1",
     ]
     for secreto in secretos:
         argumentos.extend(["--secreto", secreto])

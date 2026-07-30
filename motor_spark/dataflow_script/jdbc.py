@@ -1,110 +1,161 @@
+"""Construcción y ejecución segura de lecturas JDBC para planes Dataflow.
+
+Solo se interpolan identificadores validados y entrecomillados. Los valores de
+conexión proceden del catálogo y los secretos se incorporan directamente como
+opciones de Spark; nunca se concatenan dentro del SQL generado.
+"""
+
 from __future__ import annotations
 
+import os
 import re
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Sequence
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Any
 
 from motor_spark.conexiones.secretos import AdministradorSecretos
 from motor_spark.dataflow_script.errores import ErrorDataflow
 
-if TYPE_CHECKING:
-    pass
+IDENTIFICADOR_SQL_PATRON = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+PATRON_VARIABLE_URL = re.compile(
+    r"\$\{(?P<nombre>[A-Za-z_][A-Za-z0-9_]*)(?::(?P<default>[^}]*))?\}"
+)
 
-
-IDENTIFICADOR_SQL_PATRON: re.Pattern[str] = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
-
-PATRON_SCHEMA_TABLE: re.Pattern[str] = re.compile(
-    r"^(?P<schema>[a-zA-Z_][a-zA-Z0-9_]*)\.(?P<table>[a-zA-Z_][a-zA-Z0-9_]*)$"
+# Estas opciones controlarían el origen real o expondrían credenciales si un
+# catálogo manipulado pudiera sobrescribirlas después de nuestras validaciones.
+PROPIEDADES_JDBC_RESERVADAS = frozenset(
+    {"url", "dbtable", "query", "driver", "user", "password"}
 )
 
 
 class ErrorJdbc(ErrorDataflow):
-    pass
+    """Error estructurado de preparación o lectura JDBC."""
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ColumnaJdbc:
     nombre: str
     tipo: str | None = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class TablaJdbc:
     esquema: str | None
     tabla: str
     columnas: tuple[ColumnaJdbc, ...] = ()
 
 
-class ConstructorSubconsulta:
-    _PALABRAS_RESERVADAS_SQL: frozenset[str] = frozenset({
-        "SELECT", "FROM", "WHERE", "JOIN", "LEFT", "RIGHT", "INNER", "OUTER",
-        "ON", "AND", "OR", "NOT", "AS", "IN", "LIKE", "IS", "NULL",
-        "GROUP", "BY", "HAVING", "ORDER", "ASC", "DESC", "LIMIT", "OFFSET",
-        "UNION", "INTERSECT", "EXCEPT", "INSERT", "UPDATE", "DELETE",
-        "CREATE", "DROP", "ALTER", "TABLE", "INDEX", "VIEW", "DATABASE",
-        "SCHEMA", "INTO", "VALUES", "SET", "DISTINCT", "ALL",
-        "CASE", "WHEN", "THEN", "ELSE", "END", "OVER", "PARTITION",
-        "WINDOW", "WITH", "RECURSIVE", "EXISTS", "BETWEEN", "CROSS",
-    })
+def resolver_variables_url(url: str) -> str:
+    """Resuelve ``${VARIABLE:default}`` sin permitir nombres arbitrarios.
 
-    _PALABRAS_NO_PERMITIDAS_VALOR: frozenset[str] = frozenset({
-        "SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER",
-        "EXEC", "EXECUTE", "UNION", "TRUNCATE", "MERGE", "--", "/*", "*/",
-        ";", "xp_", "sp_", "0x",
-    })
+    Una variable ausente sin valor predeterminado detiene la ejecución; dejar el
+    marcador literal produciría errores de conexión difíciles de diagnosticar.
+    """
+
+    def reemplazar(coincidencia: re.Match[str]) -> str:
+        nombre = coincidencia.group("nombre")
+        predeterminado = coincidencia.group("default")
+        valor = os.environ.get(nombre, predeterminado)
+        if valor is None:
+            raise ValueError(
+                f"Variable de entorno {nombre!r} requerida por la URL JDBC"
+            )
+        if any(caracter in valor for caracter in ("\x00", "\r", "\n")):
+            raise ValueError(
+                f"Variable de entorno {nombre!r} contiene caracteres inválidos"
+            )
+        return valor
+
+    return PATRON_VARIABLE_URL.sub(reemplazar, url)
+
+
+class ConstructorSubconsulta:
+    """Genera SELECT limitados a identificadores previamente validados."""
+
+    _PALABRAS_RESERVADAS_SQL = frozenset(
+        {
+            "SELECT",
+            "FROM",
+            "WHERE",
+            "JOIN",
+            "LEFT",
+            "RIGHT",
+            "INNER",
+            "OUTER",
+            "ON",
+            "AND",
+            "OR",
+            "NOT",
+            "AS",
+            "IN",
+            "LIKE",
+            "IS",
+            "NULL",
+            "GROUP",
+            "BY",
+            "HAVING",
+            "ORDER",
+            "UNION",
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "CREATE",
+            "DROP",
+            "ALTER",
+            "TABLE",
+        }
+    )
 
     def __init__(self, url: str, propiedades: dict[str, str]) -> None:
         self._url = url
-        self._propiedades = propiedades
+        self._propiedades = dict(propiedades)
         self._errores: list[ErrorJdbc] = []
 
     @property
     def errores(self) -> tuple[ErrorJdbc, ...]:
         return tuple(self._errores)
 
+    def _reportar_error(self, mensaje: str, codigo: str) -> None:
+        self._errores.append(
+            ErrorJdbc(
+                mensaje=mensaje,
+                ubicacion=None,
+                codigo=codigo,
+            )
+        )
+
     def validar_identificador(self, identificador: str) -> bool:
+        """Acepta solo el subconjunto portable usado por los Dataflows."""
         if not identificador:
             self._reportar_error(
-                f"Identificador vacio",
+                "Identificador vacio",
                 "JDBC_INVALID_ID_EMPTY",
             )
             return False
-
         if len(identificador) > 128:
             self._reportar_error(
                 f"Identificador demasiado largo: {identificador}",
                 "JDBC_INVALID_ID_TOO_LONG",
             )
             return False
-
-        if not IDENTIFICADOR_SQL_PATRON.match(identificador):
+        if not IDENTIFICADOR_SQL_PATRON.fullmatch(identificador):
             self._reportar_error(
                 f"Identificador invalido: {identificador}",
                 "JDBC_INVALID_ID_FORMAT",
             )
             return False
-
         if identificador.upper() in self._PALABRAS_RESERVADAS_SQL:
             self._reportar_error(
                 f"Identificador es palabra reservada: {identificador}",
                 "JDBC_INVALID_ID_RESERVED",
             )
             return False
-
         return True
 
-    def _reportar_error(
-        self, mensaje: str, codigo: str, ubicacion: Any | None = None
-    ) -> None:
-        self._errores.append(
-            ErrorJdbc(
-                mensaje=mensaje,
-                ubicacion=ubicacion,
-                codigo=codigo,
-            )
-        )
-
-    def _quote_identificador(self, identificador: str) -> str:
+    @staticmethod
+    def _quote_identificador(identificador: str) -> str:
+        # El identificador ya pasó una allowlist de caracteres. Las comillas
+        # dobles conservan mayúsculas y evitan colisiones con nombres especiales.
         return f'"{identificador}"'
 
     def construir_select(
@@ -119,50 +170,43 @@ class ConstructorSubconsulta:
                 "JDBC_COLUMNAS_REQUERIDAS",
             )
             return None
-
         if not self.validar_identificador(tabla):
             return None
-
         if esquema is not None and not self.validar_identificador(esquema):
             return None
 
-        esquema_quoted = (
-            self._quote_identificador(esquema) if esquema else None
-        )
         tabla_quoted = self._quote_identificador(tabla)
+        referencia = (
+            f"{self._quote_identificador(esquema)}.{tabla_quoted}"
+            if esquema
+            else tabla_quoted
+        )
 
-        if esquema_quoted:
-            referencia_tabla = f"{esquema_quoted}.{tabla_quoted}"
-        else:
-            referencia_tabla = tabla_quoted
-
-        columnas_validas: list[str] = []
-        for col in columnas:
-            if self.validar_identificador(col):
-                columnas_validas.append(self._quote_identificador(col))
-            else:
+        columnas_quoted: list[str] = []
+        for columna in columnas:
+            if not self.validar_identificador(columna):
                 return None
+            columnas_quoted.append(self._quote_identificador(columna))
 
-        select_clause = ", ".join(columnas_validas)
-        subconsulta = f"SELECT {select_clause} FROM {referencia_tabla}"
-
-        return subconsulta
+        return f"SELECT {', '.join(columnas_quoted)} FROM {referencia}"
 
     def construir_reader_jdbc(
         self,
         tabla: str,
         columnas: Sequence[str],
+        esquema: str | None = None,
     ) -> dict[str, Any] | None:
-        subconsulta = self.construir_select(None, tabla, columnas)
+        # ``esquema`` queda al final para conservar la API pública original.
+        subconsulta = self.construir_select(esquema, tabla, columnas)
         if subconsulta is None:
             return None
 
-        propiedades: dict[str, Any] = {
-            "dbtable": f"({subconsulta})",
-        }
-
+        # Spark exige un alias para subconsultas JDBC en varios motores, entre
+        # ellos PostgreSQL. El alias es constante y no recibe entrada del usuario.
         return {
-            "properties": propiedades,
+            "properties": {
+                "dbtable": f"({subconsulta}) AS qlik_dataflow_source",
+            }
         }
 
 
@@ -173,8 +217,12 @@ def construir_select(
     url: str,
     propiedades: dict[str, str],
 ) -> str | None:
-    constructor = ConstructorSubconsulta(url, propiedades)
-    return constructor.construir_select(esquema, tabla, columnas)
+    """Atajo funcional conservado para compatibilidad con llamadas existentes."""
+    return ConstructorSubconsulta(url, propiedades).construir_select(
+        esquema,
+        tabla,
+        columnas,
+    )
 
 
 def construir_reader_jdbc(
@@ -182,9 +230,35 @@ def construir_reader_jdbc(
     columnas: Sequence[str],
     url: str,
     propiedades: dict[str, str],
+    esquema: str | None = None,
 ) -> dict[str, Any] | None:
-    constructor = ConstructorSubconsulta(url, propiedades)
-    return constructor.construir_reader_jdbc(tabla, columnas)
+    """Construye las opciones de reader incluyendo el esquema cuando existe."""
+    return ConstructorSubconsulta(url, propiedades).construir_reader_jdbc(
+        tabla,
+        columnas,
+        esquema=esquema,
+    )
+
+
+def _seleccionar_allowlist(
+    conexion,
+    esquema: str | None,
+    tabla: str,
+):
+    """Selecciona una única entrada de allowlist o falla por ambigüedad."""
+    candidatas = [
+        item
+        for item in conexion.allowlist
+        if item.tabla == tabla and (esquema is None or item.esquema == esquema)
+    ]
+    if not candidatas:
+        referencia = f"{esquema}.{tabla}" if esquema else tabla
+        raise ValueError(
+            f"Tabla {referencia!r} no esta en allowlist de {conexion.nombre!r}"
+        )
+    if len(candidatas) > 1:
+        raise ValueError(f"Tabla {tabla!r} es ambigua; debe indicarse el esquema JDBC")
+    return candidatas[0]
 
 
 def leer_jdbc(
@@ -194,62 +268,81 @@ def leer_jdbc(
     columnas: Sequence[str],
     catalogo: Any,
     secretos: AdministradorSecretos | None = None,
+    esquema: str | None = None,
 ) -> Any:
-    from motor_spark.conexiones.modelos import ConexionJdbc, CatalogoConexiones
+    """Lee una tabla JDBC exacta después de validar catálogo, esquema y campos."""
+    from motor_spark.conexiones.modelos import CatalogoConexiones
 
     if not isinstance(catalogo, CatalogoConexiones):
-        raise ValueError("catalogo debe ser CatalogoConexiones")
+        # ValueError forma parte del contrato histórico de esta función.
+        raise ValueError("catalogo debe ser CatalogoConexiones")  # noqa: TRY004
 
-    conn_jdbc = catalogo.buscar_jdbc(nombre_conexion)
-    if conn_jdbc is None:
-        raise ValueError(f"Conexion JDBC '{nombre_conexion}' no encontrada en catalogo")
+    conexion = catalogo.buscar_jdbc(nombre_conexion)
+    if conexion is None:
+        raise ValueError(f"Conexion JDBC {nombre_conexion!r} no encontrada en catalogo")
 
-    esquema_allowlist: str | None = None
-    for item in conn_jdbc.allowlist:
-        if item.tabla == tabla:
-            esquema_allowlist = item.esquema
-            campos_allowlist = item.campos
-            if campos_allowlist and campos_allowlist != ():
-                columnas_permitidas = set(campos_allowlist)
-                for col in columnas:
-                    if col not in columnas_permitidas:
-                        raise ValueError(
-                            f"Columna '{col}' no esta en allowlist para '{esquema_allowlist}.{tabla}'"
-                        )
-            break
-    else:
-        raise ValueError(
-            f"Tabla '{tabla}' no esta en allowlist de '{nombre_conexion}'"
-        )
-
-    secretos = secretos or AdministradorSecretos()
-    secreto_valor = secretos.obtener(conn_jdbc.secreto_nombre)
-    if secreto_valor is None:
-        raise ValueError(
-            f"Secreto '{conn_jdbc.secreto_nombre}' no encontrado en entorno"
-        )
-
-    propiedades_finales = dict(conn_jdbc.propiedades)
-    propiedades_finales["user"] = secreto_valor.split(":")[0] if ":" in secreto_valor else secreto_valor
-    if ":" in secreto_valor:
-        propiedades_finales["password"] = secreto_valor.split(":", 1)[1]
-
-    if esquema_allowlist:
-        propiedades_finales["schema"] = esquema_allowlist
-
-    constructor = ConstructorSubconsulta(conn_jdbc.url, propiedades_finales)
-    reader_params = constructor.construir_reader_jdbc(tabla, columnas)
-    if reader_params is None:
-        raise ValueError(f"Error construyendo reader para '{tabla}'")
-
-    reader = (
-        spark.read
-        .format("jdbc")
-        .option("url", conn_jdbc.url)
-        .option("dbtable", reader_params["properties"]["dbtable"])
+    entrada_allowlist = _seleccionar_allowlist(
+        conexion,
+        esquema,
+        tabla,
     )
+    if entrada_allowlist.campos:
+        permitidas = set(entrada_allowlist.campos)
+        no_permitidas = [columna for columna in columnas if columna not in permitidas]
+        if no_permitidas:
+            raise ValueError(
+                f"Columna {no_permitidas[0]!r} no esta en allowlist para "
+                f"{entrada_allowlist.esquema!r}.{tabla!r}"
+            )
 
-    for key, value in propiedades_finales.items():
-        reader = reader.option(key, value)
+    propiedades_catalogo = {
+        str(clave): str(valor) for clave, valor in conexion.propiedades.items()
+    }
+    reservadas = sorted(
+        clave
+        for clave in propiedades_catalogo
+        if clave.lower() in PROPIEDADES_JDBC_RESERVADAS
+    )
+    if reservadas:
+        raise ValueError(
+            f"El catalogo contiene propiedad JDBC reservada: {reservadas[0]}"
+        )
 
+    administrador = secretos or AdministradorSecretos()
+    credencial = administrador.obtener_obligatorio(conexion.secreto_nombre)
+    usuario, separador, password = credencial.partition(":")
+    if not separador or not usuario or not password:
+        raise ValueError(
+            f"Secreto {conexion.secreto_nombre!r} debe usar formato USUARIO:CLAVE"
+        )
+
+    esquema_real = entrada_allowlist.esquema or esquema
+    constructor = ConstructorSubconsulta(
+        conexion.url,
+        propiedades_catalogo,
+    )
+    parametros = constructor.construir_reader_jdbc(
+        tabla,
+        columnas,
+        esquema=esquema_real,
+    )
+    if parametros is None:
+        detalle = "; ".join(error.mensaje for error in constructor.errores)
+        raise ValueError(
+            f"No se pudo construir la lectura JDBC de {tabla!r}: {detalle}"
+        )
+
+    url_resuelta = resolver_variables_url(conexion.url)
+    opciones = {
+        "url": url_resuelta,
+        "dbtable": parametros["properties"]["dbtable"],
+        "driver": conexion.driver,
+        **propiedades_catalogo,
+        "user": usuario,
+        "password": password,
+    }
+
+    reader = spark.read.format("jdbc")
+    for clave, valor in opciones.items():
+        reader = reader.option(clave, valor)
     return reader.load()

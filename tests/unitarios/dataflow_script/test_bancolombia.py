@@ -1,11 +1,7 @@
-import pytest
-
 from motor_spark.dataflow_script.ast import (
-    SentenciaConcatenate,
     SentenciaDropTable,
     SentenciaLibConnectTo,
     SentenciaLoad,
-    SentenciaResident,
     SentenciaSet,
     SentenciaStore,
 )
@@ -28,7 +24,9 @@ class TestParserBancolombia:
         assert programa.sentencias_globales[0].conexion == "Mi Conexion"
 
     def test_parsear_lib_connect_to_con_espacios(self):
-        tokens, _ = tokenizar("LIB CONNECT TO [Bancolombia prueba:Postgres_BanColombia_Prueba];")
+        tokens, _ = tokenizar(
+            "LIB CONNECT TO [Bancolombia prueba:Postgres_BanColombia_Prueba];"
+        )
         programa, errores = parsear(tokens)
         assert len(errores) == 0
         assert isinstance(programa.sentencias_globales[0], SentenciaLibConnectTo)
@@ -52,7 +50,9 @@ class TestLexerBancolombia:
         assert tokens[0].valor == "Mi Tabla con Espacios"
 
     def test_tokenizar_lib_uri_con_espacios_en_nombre(self):
-        tokens, errores = tokenizar("[lib://Bancolombia prueba:SFTP//upload/archivo.csv]")
+        tokens, errores = tokenizar(
+            "[lib://Bancolombia prueba:SFTP//upload/archivo.csv]"
+        )
         assert len(errores) == 0
         lib_tokens = [t for t in tokens if t.tipo == "LIB_URI"]
         assert len(lib_tokens) == 1
@@ -69,32 +69,32 @@ class TestLexerBancolombia:
 class TestExpresionesBancolombia:
     def test_parsear_coalesce(self):
         tokens, _ = tokenizar("SELECT Coalesce(a, 0) FROM t;")
-        programa, errores = parsear(tokens)
+        _programa, errores = parsear(tokens)
         assert len(errores) == 0
 
     def test_parsear_isnull(self):
         tokens, _ = tokenizar("SELECT IsNull(a) FROM t;")
-        programa, errores = parsear(tokens)
+        _programa, errores = parsear(tokens)
         assert len(errores) == 0
 
     def test_parsear_indexregex(self):
         tokens, _ = tokenizar("SELECT IndexRegEx(a, '^[0-9]+$') FROM t;")
-        programa, errores = parsear(tokens)
+        _programa, errores = parsear(tokens)
         assert len(errores) == 0
 
     def test_parsear_num(self):
         tokens, _ = tokenizar("SELECT Num(a) FROM t;")
-        programa, errores = parsear(tokens)
+        _programa, errores = parsear(tokens)
         assert len(errores) == 0
 
     def test_parsear_month(self):
         tokens, _ = tokenizar("SELECT Month(fecha) FROM t;")
-        programa, errores = parsear(tokens)
+        _programa, errores = parsear(tokens)
         assert len(errores) == 0
 
     def test_parsear_year(self):
         tokens, _ = tokenizar("SELECT Year(fecha) FROM t;")
-        programa, errores = parsear(tokens)
+        _programa, errores = parsear(tokens)
         assert len(errores) == 0
 
 
@@ -107,7 +107,9 @@ class TestRechazosExplícitos:
         assert len(errores) > 0
 
     def test_rechaza_sql_libre_union(self):
-        tokens, _ = tokenizar("SELECT * FROM (SELECT a FROM t1 UNION SELECT b FROM t2);")
+        tokens, _ = tokenizar(
+            "SELECT * FROM (SELECT a FROM t1 UNION SELECT b FROM t2);"
+        )
         _, errores = parsear(tokens)
         assert len(errores) > 0
 
@@ -132,12 +134,16 @@ class TestRechazosExplícitos:
         assert len(errores) > 0
 
     def test_rechaza_having(self):
-        tokens, _ = tokenizar("SELECT a, Count(*) FROM t GROUP BY a HAVING Count(*) > 1;")
+        tokens, _ = tokenizar(
+            "SELECT a, Count(*) FROM t GROUP BY a HAVING Count(*) > 1;"
+        )
         _, errores = parsear(tokens)
         assert len(errores) > 0
 
     def test_rechaza_case(self):
-        tokens, _ = tokenizar("SELECT CASE WHEN a = 1 THEN 'uno' ELSE 'otro' END FROM t;")
+        tokens, _ = tokenizar(
+            "SELECT CASE WHEN a = 1 THEN 'uno' ELSE 'otro' END FROM t;"
+        )
         _, errores = parsear(tokens)
         assert len(errores) > 0
 
@@ -150,10 +156,12 @@ class TestLimitacionesDocumentadas:
     plenamente y son aceptadas solo parcialmente.
     """
 
-    def test_count_distinct_parcialmente_soportado(self):
-        tokens, _ = tokenizar("SELECT Count(DISTINCT a) FROM t;")
-        _, errores = parsear(tokens)
-        assert len(errores) > 0, "COUNT(DISTINCT) es parcialmente soportado"
+    def test_count_distinct_soportado(self):
+        tokens, errores_lexicos = tokenizar("SELECT Count(DISTINCT a) AS total FROM t;")
+        programa, errores = parsear(tokens)
+        assert errores_lexicos == []
+        assert errores == []
+        assert programa.etiquetas[0].sentencias[0].proyecciones[0].alias == "total"
 
     def test_window_wrank_parcialmente_soportado(self):
         tokens, _ = tokenizar("SELECT Window(WRank(1,1), [col1]) AS r FROM t;")
@@ -165,7 +173,70 @@ class TestLimitacionesDocumentadas:
         _, errores = parsear(tokens)
         assert len(errores) == 0, "NOCONCATENATE es aceptado por el parser"
 
-    def test_group_by_en_resident_no_soportado(self):
-        tokens, _ = tokenizar("LOAD a, Count(b) AS cnt RESIDENT t GROUP BY a;")
-        _, errores = parsear(tokens)
-        assert len(errores) > 0, "GROUP BY en RESIDENT requiere parser especializado"
+    def test_group_by_en_resident_soportado(self):
+        tokens, errores_lexicos = tokenizar(
+            "LOAD a, Count(b) AS cnt RESIDENT t GROUP BY a;"
+        )
+        programa, errores = parsear(tokens)
+        assert errores_lexicos == []
+        assert errores == []
+        carga = programa.etiquetas[0].sentencias[0]
+        assert carga.es_resident is True
+        assert len(carga.group_by) == 1
+
+
+class TestRegresionesScriptBancolombia:
+    """Casos mínimos extraídos de fallos observados en el fixture completo."""
+
+    def test_etiqueta_qlik_entre_corchetes(self):
+        tokens, errores_lexicos = tokenizar(
+            "[Ventas]: LOAD [venta_id] FROM 'ventas.csv';"
+        )
+        programa, errores_parser = parsear(tokens)
+
+        assert errores_lexicos == []
+        assert errores_parser == []
+        assert programa.etiquetas[0].nombre == "Ventas"
+
+    def test_load_acepta_uri_lib_entre_corchetes(self):
+        script = (
+            "[Ventas]: LOAD [venta_id] FROM [lib://Conexion SFTP//datos/ventas.csv];"
+        )
+        tokens, errores_lexicos = tokenizar(script)
+        programa, errores_parser = parsear(tokens)
+
+        assert errores_lexicos == []
+        assert errores_parser == []
+        sentencia = programa.etiquetas[0].sentencias[0]
+        assert isinstance(sentencia, SentenciaLoad)
+        assert sentencia.ruta == "lib://Conexion SFTP//datos/ventas.csv"
+
+    def test_store_acepta_formato_txt_sin_comillas(self):
+        script = "STORE [Sucursales] INTO [lib://Conexion SFTP//upload/s.csv] (txt);"
+        tokens, errores_lexicos = tokenizar(script)
+        programa, errores_parser = parsear(tokens)
+
+        assert errores_lexicos == []
+        assert errores_parser == []
+        sentencia = programa.etiquetas[0].sentencias[0]
+        assert isinstance(sentencia, SentenciaStore)
+        assert sentencia.formato == "txt"
+
+
+def test_select_sql_interpreta_comillas_dobles_como_identificadores():
+    """PostgreSQL usa comillas dobles para columnas y tablas, no strings."""
+    tokens, errores_lexicos = tokenizar(
+        'SELECT "cliente_id", "nombres" FROM "demo"."clientes";'
+    )
+    programa, errores_parser = parsear(tokens)
+
+    assert errores_lexicos == []
+    assert errores_parser == []
+    sentencia = programa.etiquetas[0].sentencias[0]
+    assert all(item.expresion.tipo.name == "COLUMNA" for item in sentencia.proyecciones)
+    assert [item.expresion.valor for item in sentencia.proyecciones] == [
+        "cliente_id",
+        "nombres",
+    ]
+    assert sentencia.esquema == "demo"
+    assert sentencia.tabla == "clientes"

@@ -11,13 +11,17 @@ class DataFrameFalso:
 
 
 def test_aplicar_pasos_emite_eventos_y_delega(capsys):
-    receta = RecetaConfig.model_validate({
-        "salida": {},
-        "pasos": [{
-            "tipo": "seleccionar_columnas",
-            "columnas": ["id"],
-        }],
-    })
+    receta = RecetaConfig.model_validate(
+        {
+            "salida": {},
+            "pasos": [
+                {
+                    "tipo": "seleccionar_columnas",
+                    "columnas": ["id"],
+                }
+            ],
+        }
+    )
 
     resultado = aplicar_pasos(
         DataFrameFalso(["id", "nombre"]),

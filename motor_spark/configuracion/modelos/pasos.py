@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -80,19 +80,17 @@ class ReparticionarPaso(_PasoBase):
 
 
 PasoConfig = Annotated[
-    Union[
-        SeleccionarColumnasPaso,
-        EliminarColumnasPaso,
-        RenombrarColumnaPaso,
-        ConvertirTipoPaso,
-        CrearColumnaPaso,
-        FiltrarPaso,
-        RellenarNulosPaso,
-        NormalizarTextoPaso,
-        EliminarDuplicadosPaso,
-        AgruparPaso,
-        ReparticionarPaso,
-    ],
+    SeleccionarColumnasPaso
+    | EliminarColumnasPaso
+    | RenombrarColumnaPaso
+    | ConvertirTipoPaso
+    | CrearColumnaPaso
+    | FiltrarPaso
+    | RellenarNulosPaso
+    | NormalizarTextoPaso
+    | EliminarDuplicadosPaso
+    | AgruparPaso
+    | ReparticionarPaso,
     Field(discriminator="tipo"),
 ]
 

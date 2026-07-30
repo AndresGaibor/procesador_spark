@@ -2,17 +2,16 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
-from typing import Any
 
-from motor_spark.plan.modelos import PlanDataflow, Operacion
+from motor_spark.plan.modelos import Operacion, PlanDataflow
 
 
 class SerializadorPlan:
     @staticmethod
     def serializar(plan: PlanDataflow) -> str:
         import json
-        datos = plan.model_dump(mode='json')
+
+        datos = plan.model_dump(mode="json")
         return json.dumps(datos, indent=2, sort_keys=True, default=str)
 
     @staticmethod
@@ -29,12 +28,12 @@ class SerializadorPlan:
             "tipo": operacion.tipo.value,
             "id": operacion.id,
         }
-        if hasattr(operacion, 'tabla_origen'):
-            datos["tabla_origen"] = getattr(operacion, 'tabla_origen', None)
-        if hasattr(operacion, 'tabla'):
-            datos["tabla"] = getattr(operacion, 'tabla', None)
-        if hasattr(operacion, 'campos'):
-            datos["campos"] = getattr(operacion, 'campos', None)
+        if hasattr(operacion, "tabla_origen"):
+            datos["tabla_origen"] = getattr(operacion, "tabla_origen", None)
+        if hasattr(operacion, "tabla"):
+            datos["tabla"] = getattr(operacion, "tabla", None)
+        if hasattr(operacion, "campos"):
+            datos["campos"] = getattr(operacion, "campos", None)
 
         contenido = json.dumps(datos, sort_keys=True, default=str)
         return hashlib.sha256(contenido.encode()).hexdigest()

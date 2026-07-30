@@ -4,11 +4,11 @@ import shutil
 
 import pytest
 
-from motor_spark.dataflow_script import normalizador, tokenizar, parsear
+from motor_spark.dataflow_script import normalizador, parsear, tokenizar
 from motor_spark.dataflow_script.ast import ProgramaDataflowScript
 from motor_spark.plan.compilador import compilar
 from motor_spark.plan.modelos import PlanDataflow
-from motor_spark.plan.serializador import serializar_plan, deserializar_plan
+from motor_spark.plan.serializador import deserializar_plan, serializar_plan
 
 pytestmark = pytest.mark.spark
 
@@ -17,7 +17,7 @@ def _skip_if_no_spark():
     if shutil.which("java") is None:
         pytest.skip("Java no instalado")
     try:
-        import pyspark
+        import pyspark  # noqa: F401 -- prueba disponibilidad opcional
     except ImportError:
         pytest.skip("PySpark no instalado")
 
@@ -111,6 +111,7 @@ class TestPropiedadesPlan:
         if len(plan.operaciones) > 0:
             op = plan.operaciones[0]
             from motor_spark.plan.serializador import SerializadorPlan
+
             fp1 = SerializadorPlan.fingerprint_operacion(op)
             fp2 = SerializadorPlan.fingerprint_operacion(op)
             assert fp1 == fp2
@@ -131,8 +132,8 @@ class TestPropiedadesCatalogos:
 class TestPropiedadesExpresiones:
     def test_expresion_compilada_no_es_none(self):
         _skip_if_no_spark()
-        from motor_spark.dataflow_script.expresiones import compilar_expresion
         from motor_spark.dataflow_script.ast import Expresion, TipoExpresion
+        from motor_spark.dataflow_script.expresiones import compilar_expresion
 
         expr = Expresion(tipo=TipoExpresion.COLUMNA, valor="nombre")
         resultado = compilar_expresion(expr)
@@ -140,8 +141,8 @@ class TestPropiedadesExpresiones:
 
     def test_expresion_vacia_retorna_sin_error(self):
         _skip_if_no_spark()
-        from motor_spark.dataflow_script.expresiones import compilar_expresion
         from motor_spark.dataflow_script.ast import Expresion, TipoExpresion
+        from motor_spark.dataflow_script.expresiones import compilar_expresion
 
         expr = Expresion(tipo=TipoExpresion.LITERAL_STRING, valor="''")
         resultado = compilar_expresion(expr)

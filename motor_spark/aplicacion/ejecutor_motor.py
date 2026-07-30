@@ -10,7 +10,10 @@ from motor_spark.aplicacion.resultado_ejecucion import (
     construir_resultado_exito,
 )
 from motor_spark.compartido.eventos_consola import emitir
-from motor_spark.configuracion.argumentos import ArgumentosDataflowScript, ArgumentosEjecucion
+from motor_spark.configuracion.argumentos import (
+    ArgumentosDataflowScript,
+    ArgumentosEjecucion,
+)
 from motor_spark.configuracion.cargador_receta import cargar_receta
 from motor_spark.dominio.esquemas import resolver_esquema_entrada
 from motor_spark.infraestructura.resultados.escritor_json import guardar_resultado
@@ -53,6 +56,7 @@ def _ejecutar_carga_completa(
 def ejecutar_motor(argumentos: ArgumentosEjecucion | ArgumentosDataflowScript) -> int:
     if isinstance(argumentos, ArgumentosDataflowScript):
         from motor_spark.aplicacion.ejecutor_dataflow import ejecutar_dataflow
+
         return ejecutar_dataflow(argumentos)
 
     assert isinstance(argumentos, ArgumentosEjecucion)
@@ -74,10 +78,7 @@ def ejecutar_motor(argumentos: ArgumentosEjecucion | ArgumentosDataflowScript) -
         emitir("MODO_ESQUEMA_ENTRADA=" + modo_esquema)
 
         if esquema is not None:
-            emitir(
-                "ESQUEMA_ENTRADA_DECLARADO="
-                + esquema.simpleString()
-            )
+            emitir("ESQUEMA_ENTRADA_DECLARADO=" + esquema.simpleString())
         elif argumentos.esquema.strip():
             emitir("SCHEMA_SPEC_IGNORADO=true")
 
@@ -87,10 +88,7 @@ def ejecutar_motor(argumentos: ArgumentosEjecucion | ArgumentosDataflowScript) -
             esquema=esquema,
             configuracion=receta.entrada,
         )
-        emitir(
-            "ESQUEMA_ENTRADA_REAL="
-            + datos.schema.simpleString()
-        )
+        emitir("ESQUEMA_ENTRADA_REAL=" + datos.schema.simpleString())
 
         procesados = aplicar_pasos(datos, receta.pasos)
         metricas_incrementales: dict[str, Any] = {}
@@ -104,9 +102,7 @@ def ejecutar_motor(argumentos: ArgumentosEjecucion | ArgumentosDataflowScript) -
                 configuracion_salida=receta.salida,
             )
             total_registros = resultado_incremental.total_registros
-            metricas_incrementales = (
-                resultado_incremental.metricas_incrementales
-            )
+            metricas_incrementales = resultado_incremental.metricas_incrementales
             metricas_salida = resultado_incremental.metricas_salida
         else:
             total_registros, metricas_salida = _ejecutar_carga_completa(
@@ -114,9 +110,7 @@ def ejecutar_motor(argumentos: ArgumentosEjecucion | ArgumentosDataflowScript) -
                 procesados=procesados,
                 ruta_salida=argumentos.salida,
                 configuracion_salida=receta.salida,
-                contar_registros=bool(
-                    receta.auditoria.contar_registros
-                ),
+                contar_registros=bool(receta.auditoria.contar_registros),
             )
 
         resultado = construir_resultado_exito(
@@ -130,21 +124,17 @@ def ejecutar_motor(argumentos: ArgumentosEjecucion | ArgumentosDataflowScript) -
             metricas_salida=metricas_salida,
         )
         guardar_resultado(argumentos.resultado, resultado)
-        emitir(
-            "RESULTADO_MOTOR="
-            + json.dumps(resultado, ensure_ascii=False)
-        )
+        emitir("RESULTADO_MOTOR=" + json.dumps(resultado, ensure_ascii=False))
         return 0
 
-    except Exception as excepcion:
+    except Exception as excepcion:  # noqa: BLE001
         resultado_error = construir_resultado_error(
             argumentos,
             excepcion,
         )
         guardar_resultado(argumentos.resultado, resultado_error)
         emitir(
-            "RESULTADO_MOTOR="
-            + json.dumps(resultado_error, ensure_ascii=False),
+            "RESULTADO_MOTOR=" + json.dumps(resultado_error, ensure_ascii=False),
             error=True,
         )
         traceback.print_exc()

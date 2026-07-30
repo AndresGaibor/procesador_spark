@@ -1,14 +1,9 @@
-import pytest
-
 from motor_spark.dataflow_script.ast import (
-    ProgramaDataflowScript,
     SentenciaConcatenate,
     SentenciaDropTable,
-    SentenciaLibConnectTo,
     SentenciaLoad,
     SentenciaResident,
     SentenciaSelect,
-    SentenciaSet,
     SentenciaStore,
 )
 from motor_spark.dataflow_script.lexer import tokenizar

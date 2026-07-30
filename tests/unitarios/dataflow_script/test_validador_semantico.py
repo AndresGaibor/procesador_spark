@@ -1,16 +1,3 @@
-import pytest
-
-from motor_spark.dataflow_script.ast import (
-    ProgramaDataflowScript,
-    SentenciaConcatenate,
-    SentenciaDropTable,
-    SentenciaLibConnectTo,
-    SentenciaLoad,
-    SentenciaResident,
-    SentenciaSelect,
-    SentenciaSet,
-    SentenciaStore,
-)
 from motor_spark.dataflow_script.lexer import tokenizar
 from motor_spark.dataflow_script.parser import parsear
 from motor_spark.dataflow_script.validador import validar_semantico
@@ -26,7 +13,9 @@ def test_validar_tabla_inexistente():
 
 
 def test_validar_tabla_dropeada():
-    tokens, _ = tokenizar("t1: LOAD a FROM '/f.csv'; t2: SELECT * FROM t1; DROP TABLE t1; SELECT * FROM t1;")
+    tokens, _ = tokenizar(
+        "t1: LOAD a FROM '/f.csv'; t2: SELECT * FROM t1; DROP TABLE t1; SELECT * FROM t1;"
+    )
     programa, errores_parser = parsear(tokens)
     assert len(errores_parser) == 0
     errores = validar_semantico(programa)
@@ -54,12 +43,14 @@ def test_validar_alias_duplicado():
 
 def test_validar_funcion_no_whitelist():
     tokens, _ = tokenizar("SELECT FUNCIONDESCONOCIDA(a) FROM t;")
-    programa, errores_parser = parsear(tokens)
+    _programa, errores_parser = parsear(tokens)
     assert len(errores_parser) > 0
 
 
 def test_validar_producto_cartesiano():
-    tokens, _ = tokenizar("t1: LOAD a FROM '/f.csv'; t2: SELECT * FROM t1 LEFT JOIN t1 ON id = id;")
+    tokens, _ = tokenizar(
+        "t1: LOAD a FROM '/f.csv'; t2: SELECT * FROM t1 LEFT JOIN t1 ON id = id;"
+    )
     programa, errores_parser = parsear(tokens)
     assert len(errores_parser) == 0
     errores = validar_semantico(programa)

@@ -20,11 +20,11 @@ Métricas Spark collectées:
     - spark.sql.shuffle.partitions
     - spark.task.duration ms
 """
+
 from __future__ import annotations
 
 import os
 import time
-from pathlib import Path
 
 import pytest
 
@@ -41,6 +41,7 @@ NUM_FILAS = int(os.environ.get("DATAFLOW_PERF_ROWS", "0"))
 def spark_perf(spark_local):
     pytest.importorskip("pyspark")
     import shutil
+
     if shutil.which("java") is None:
         pytest.skip("Java no instalado")
     yield spark_local
@@ -57,18 +58,21 @@ class TestDataflowPerfBasico:
 
     def test_lectura_csv_rapida(self, tmp_path):
         import shutil
+
         pytest.importorskip("pyspark")
         if shutil.which("java") is None:
             pytest.skip("Java no instalado")
 
         from pyspark.sql import SparkSession
-        spark = SparkSession.builder.master("local[1]").appName("perf-test").getOrCreate()
+
+        spark = (
+            SparkSession.builder.master("local[1]").appName("perf-test").getOrCreate()
+        )
 
         csv_path = tmp_path / "perf.csv"
         with open(csv_path, "w", encoding="utf-8", newline="") as f:
             f.write("id,nombre,monto\n")
-            for i in range(NUM_FILAS):
-                f.write(f"{i},cliente_{i},{i * 1.5}\n")
+            f.writelines(f"{i},cliente_{i},{i * 1.5}\n" for i in range(NUM_FILAS))
 
         inicio = time.monotonic()
         df = spark.read.csv(str(csv_path), header=True, inferSchema=True)
@@ -77,7 +81,9 @@ class TestDataflowPerfBasico:
 
         spark.stop()
 
-        assert duracion < 60, f"Lectura {NUM_FILAS} filas tardo {duracion:.2f}s (umbral: 60s)"
+        assert duracion < 60, (
+            f"Lectura {NUM_FILAS} filas tardo {duracion:.2f}s (umbral: 60s)"
+        )
 
     def test_agregacion_groupby(self, spark_perf, df_grande):
         from pyspark.sql import functions as F

@@ -1,7 +1,5 @@
 import json
 
-import pytest
-
 from motor_spark.aplicacion import ejecutor_motor
 from motor_spark.configuracion.argumentos import ArgumentosEjecucion
 from motor_spark.configuracion.modelos.receta import RecetaConfig
@@ -48,9 +46,7 @@ def test_receta_invalida_no_crea_spark(monkeypatch, tmp_path, capsys):
         raise AssertionError("No debía crear Spark")
 
     monkeypatch.setattr(ejecutor_motor, "crear_sesion_spark", crear_sesion)
-    codigo = ejecutor_motor.ejecutar_motor(
-        argumentos(tmp_path, '{"entrada": {}}')
-    )
+    codigo = ejecutor_motor.ejecutar_motor(argumentos(tmp_path, '{"entrada": {}}'))
 
     assert codigo == 1
     assert creado is False
@@ -62,11 +58,13 @@ def test_receta_invalida_no_crea_spark(monkeypatch, tmp_path, capsys):
 
 def test_flujo_completo_devuelve_cero_y_detiene_spark(monkeypatch, tmp_path, capsys):
     spark = SparkFalso()
-    receta = RecetaConfig.model_validate({
-        "nombre": "Ventas",
-        "entrada": {"modo_esquema": "inferir"},
-        "salida": {},
-    })
+    receta = RecetaConfig.model_validate(
+        {
+            "nombre": "Ventas",
+            "entrada": {"modo_esquema": "inferir"},
+            "salida": {},
+        }
+    )
     datos = DataFrameFalso()
 
     monkeypatch.setattr(ejecutor_motor, "cargar_receta", lambda valor: receta)
@@ -89,9 +87,7 @@ def test_flujo_completo_devuelve_cero_y_detiene_spark(monkeypatch, tmp_path, cap
         },
     )
 
-    codigo = ejecutor_motor.ejecutar_motor(
-        argumentos(tmp_path, "receta.json")
-    )
+    codigo = ejecutor_motor.ejecutar_motor(argumentos(tmp_path, "receta.json"))
 
     assert codigo == 0
     assert spark.detenciones == 1

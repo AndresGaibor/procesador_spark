@@ -6,18 +6,18 @@ from pathlib import Path
 
 import pytest
 
-from motor_spark.aplicacion.ejecutor_dataflow import (
-    _compilar_plan,
-    _construir_resultado_error_dataflow,
-    _lexear,
-    _normalizar_script,
-    _parsear,
-    _validar,
-)
 from motor_spark.configuracion.argumentos import ArgumentosDataflowScript
-from motor_spark.dataflow_script import normalizador, tokenizar, parsear, validar_semantico
-from motor_spark.dataflow_script.expresiones import CompiladorExpresion, compilar_expresion
+from motor_spark.dataflow_script import (
+    normalizador,
+    parsear,
+    tokenizar,
+    validar_semantico,
+)
 from motor_spark.dataflow_script.ast import Expresion, TipoExpresion
+from motor_spark.dataflow_script.expresiones import (
+    CompiladorExpresion,
+    compilar_expresion,
+)
 from motor_spark.plan.compilador import compilar
 from motor_spark.plan.modelos import PlanDataflow
 
@@ -28,7 +28,7 @@ def _skip_if_no_spark():
     if shutil.which("java") is None:
         pytest.skip("Java no instalado")
     try:
-        import pyspark
+        import pyspark  # noqa: F401 -- prueba disponibilidad opcional
     except ImportError:
         pytest.skip("PySpark no instalado")
 
@@ -96,7 +96,13 @@ class TestSoloCompilar:
 
         args = ArgumentosDataflowScript(
             dataflow_script=str(script),
-            conexiones=str(Path(__file__).parent.parent / "recursos" / "dataflow" / "conexiones" / "catalogo_vacio.json"),
+            conexiones=str(
+                Path(__file__).parent.parent
+                / "recursos"
+                / "dataflow"
+                / "conexiones"
+                / "catalogo_vacio.json"
+            ),
             ejecucion_id="test-solo-compilar",
             resultado=str(resultado),
             solo_compilar=True,
@@ -104,6 +110,7 @@ class TestSoloCompilar:
         )
 
         from motor_spark.aplicacion.ejecutor_dataflow import ejecutar_dataflow
+
         codigo = ejecutar_dataflow(args)
 
         assert codigo == 0
@@ -118,7 +125,13 @@ class TestSoloCompilar:
 
         args = ArgumentosDataflowScript(
             dataflow_script=str(script),
-            conexiones=str(Path(__file__).parent.parent / "recursos" / "dataflow" / "conexiones" / "catalogo_vacio.json"),
+            conexiones=str(
+                Path(__file__).parent.parent
+                / "recursos"
+                / "dataflow"
+                / "conexiones"
+                / "catalogo_vacio.json"
+            ),
             ejecucion_id="test-solo-compilar-error",
             resultado=str(resultado),
             solo_compilar=True,
@@ -126,6 +139,7 @@ class TestSoloCompilar:
         )
 
         from motor_spark.aplicacion.ejecutor_dataflow import ejecutar_dataflow
+
         codigo = ejecutar_dataflow(args)
 
         assert codigo == 1
@@ -229,7 +243,6 @@ class TestJoinsSeguros:
         )
 
         from motor_spark.dataflow_script.ejecucion import ContextoEjecucionDataflow
-        from pyspark.sql import functions as F
 
         contexto = ContextoEjecucionDataflow(spark=spark_local)
         contexto.registrar_dataframe("tabla_izq", df_izq)
@@ -269,9 +282,8 @@ class TestFiltros:
             ["id", "nombre", "monto"],
         )
 
-        from motor_spark.dataflow_script.ejecucion import ContextoEjecucionDataflow
-        from motor_spark.dataflow_script.expresiones import CompiladorExpresion
         from motor_spark.dataflow_script.ast import Expresion, TipoExpresion
+        from motor_spark.dataflow_script.ejecucion import ContextoEjecucionDataflow
 
         contexto = ContextoEjecucionDataflow(spark=spark_local)
         contexto.registrar_dataframe("ventas", df)
@@ -293,13 +305,16 @@ class TestFiltros:
     def test_filtro_compuesto_and(self, spark_local):
         _skip_if_no_spark()
         df = spark_local.createDataFrame(
-            [(1, "Ana", 150.0, "Norte"), (2, "Carlos", 90.0, "Sur"), (3, "Maria", 200.0, "Norte")],
+            [
+                (1, "Ana", 150.0, "Norte"),
+                (2, "Carlos", 90.0, "Sur"),
+                (3, "Maria", 200.0, "Norte"),
+            ],
             ["id", "nombre", "monto", "region"],
         )
 
-        from motor_spark.dataflow_script.ejecucion import ContextoEjecucionDataflow
-        from motor_spark.dataflow_script.expresiones import CompiladorExpresion
         from motor_spark.dataflow_script.ast import Expresion, TipoExpresion
+        from motor_spark.dataflow_script.ejecucion import ContextoEjecucionDataflow
 
         contexto = ContextoEjecucionDataflow(spark=spark_local)
         contexto.registrar_dataframe("ventas", df)
@@ -368,7 +383,10 @@ class TestAgregacion:
             F.min("monto").alias("minimo"),
             F.max("monto").alias("maximo"),
         )
-        resultados = {row.region: (row.promedio, row.minimo, row.maximo) for row in df_agg.collect()}
+        resultados = {
+            row.region: (row.promedio, row.minimo, row.maximo)
+            for row in df_agg.collect()
+        }
 
         assert resultados["Norte"][0] == 150.0
         assert resultados["Norte"][1] == 100.0

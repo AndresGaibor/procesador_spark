@@ -5,8 +5,8 @@ import pytest
 from motor_spark.dataflow_script.jdbc import (
     ConstructorSubconsulta,
     ErrorJdbc,
-    construir_select,
     construir_reader_jdbc,
+    construir_select,
     leer_jdbc,
 )
 
@@ -55,7 +55,9 @@ class TestConstructorSubconsulta:
             columnas=[],
         )
         assert resultado is None
-        assert any(e.codigo == "JDBC_COLUMNAS_REQUERIDAS" for e in self._constructor.errores)
+        assert any(
+            e.codigo == "JDBC_COLUMNAS_REQUERIDAS" for e in self._constructor.errores
+        )
 
     def test_construir_select_con_columnas(self) -> None:
         resultado = self._constructor.construir_select(
@@ -206,9 +208,9 @@ class TestLeerJdbc:
 
     def test_leer_jdbc_tabla_no_en_allowlist_falla(self) -> None:
         from motor_spark.conexiones.modelos import (
+            CampoAllowlist,
             CatalogoConexiones,
             ConexionJdbc,
-            CampoAllowlist,
         )
 
         conn = ConexionJdbc(
@@ -217,7 +219,9 @@ class TestLeerJdbc:
             driver="org.postgresql.Driver",
             secreto_nombre="TEST_SECRETO",
             allowlist=(
-                CampoAllowlist(esquema="public", tabla="usuarios", campos=("id", "nombre")),
+                CampoAllowlist(
+                    esquema="public", tabla="usuarios", campos=("id", "nombre")
+                ),
             ),
         )
         catalogo = CatalogoConexiones(jdbc=(conn,))
@@ -233,9 +237,9 @@ class TestLeerJdbc:
 
     def test_leer_jdbc_columna_no_en_allowlist_falla(self) -> None:
         from motor_spark.conexiones.modelos import (
+            CampoAllowlist,
             CatalogoConexiones,
             ConexionJdbc,
-            CampoAllowlist,
         )
 
         conn = ConexionJdbc(
@@ -262,9 +266,9 @@ class TestLeerJdbc:
         import os
 
         from motor_spark.conexiones.modelos import (
+            CampoAllowlist,
             CatalogoConexiones,
             ConexionJdbc,
-            CampoAllowlist,
         )
 
         conn = ConexionJdbc(
@@ -272,9 +276,7 @@ class TestLeerJdbc:
             url="jdbc:postgresql://localhost:5432/test",
             driver="org.postgresql.Driver",
             secreto_nombre="SECRETO_INEXISTENTE_12345",
-            allowlist=(
-                CampoAllowlist(esquema="public", tabla="usuarios", campos=()),
-            ),
+            allowlist=(CampoAllowlist(esquema="public", tabla="usuarios", campos=()),),
         )
         catalogo = CatalogoConexiones(jdbc=(conn,))
 
@@ -290,3 +292,103 @@ class TestLeerJdbc:
                 columnas=["id"],
                 catalogo=catalogo,
             )
+
+
+class _ReaderJdbcFalso:
+    """Captura opciones Spark sin abrir red ni cargar un driver real."""
+
+    def __init__(self) -> None:
+        self.formato: str | None = None
+        self.opciones: dict[str, str] = {}
+
+    def format(self, formato: str):
+        self.formato = formato
+        return self
+
+    def option(self, nombre: str, valor):
+        self.opciones[nombre] = str(valor)
+        return self
+
+    def load(self):
+        return {"formato": self.formato, "opciones": dict(self.opciones)}
+
+
+class _SparkJdbcFalso:
+    def __init__(self) -> None:
+        self.read = _ReaderJdbcFalso()
+
+
+def _catalogo_jdbc_dos_esquemas(propiedades=None):
+    from motor_spark.conexiones.modelos import (
+        CampoAllowlist,
+        CatalogoConexiones,
+        ConexionJdbc,
+    )
+
+    conexion = ConexionJdbc(
+        nombre="Postgres",
+        url="jdbc:postgresql://${DB_HOST:localhost}:5432/demo",
+        driver="org.postgresql.Driver",
+        secreto_nombre="DB_LOGIN",
+        allowlist=(
+            CampoAllowlist(esquema="ventas", tabla="clientes", campos=("id",)),
+            CampoAllowlist(esquema="auditoria", tabla="clientes", campos=("id",)),
+        ),
+        propiedades=propiedades or {},
+    )
+    return CatalogoConexiones(jdbc=(conexion,))
+
+
+def test_leer_jdbc_respeta_esquema_driver_y_url_resuelta(monkeypatch):
+    from motor_spark.conexiones.secretos import AdministradorSecretos
+
+    monkeypatch.setenv("DB_HOST", "postgres-interno")
+    spark = _SparkJdbcFalso()
+
+    resultado = leer_jdbc(
+        spark=spark,
+        nombre_conexion="Postgres",
+        esquema="ventas",
+        tabla="clientes",
+        columnas=["id"],
+        catalogo=_catalogo_jdbc_dos_esquemas(),
+        secretos=AdministradorSecretos({"DB_LOGIN": "usuario:clave"}),
+    )
+
+    opciones = resultado["opciones"]
+    assert opciones["url"] == "jdbc:postgresql://postgres-interno:5432/demo"
+    assert opciones["driver"] == "org.postgresql.Driver"
+    assert 'FROM "ventas"."clientes"' in opciones["dbtable"]
+    assert opciones["user"] == "usuario"
+    assert opciones["password"] == "clave"
+
+
+def test_leer_jdbc_rechaza_tabla_ambigua_sin_esquema():
+    from motor_spark.conexiones.secretos import AdministradorSecretos
+
+    with pytest.raises(ValueError, match="ambigua"):
+        leer_jdbc(
+            spark=_SparkJdbcFalso(),
+            nombre_conexion="Postgres",
+            tabla="clientes",
+            columnas=["id"],
+            catalogo=_catalogo_jdbc_dos_esquemas(),
+            secretos=AdministradorSecretos({"DB_LOGIN": "usuario:clave"}),
+        )
+
+
+def test_leer_jdbc_rechaza_propiedad_que_sobrescribe_dbtable():
+    from motor_spark.conexiones.secretos import AdministradorSecretos
+
+    with pytest.raises(ValueError, match="propiedad JDBC reservada"):
+        leer_jdbc(
+            spark=_SparkJdbcFalso(),
+            nombre_conexion="Postgres",
+            esquema="ventas",
+            tabla="clientes",
+            columnas=["id"],
+            catalogo=_catalogo_jdbc_dos_esquemas(
+                {"dbtable": "(SELECT secreto FROM otra_tabla)"}
+            ),
+            secretos=AdministradorSecretos({"DB_LOGIN": "usuario:clave"}),
+        )

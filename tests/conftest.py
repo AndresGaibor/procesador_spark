@@ -1,25 +1,18 @@
+"""Fixtures globales de pytest para el motor de recetas."""
+
 from __future__ import annotations
 
-import shutil
-
 import pytest
+
+from tests.soporte_spark import crear_spark_local
 
 
 @pytest.fixture(scope="session")
 def spark_local():
-    pytest.importorskip("pyspark")
-    if shutil.which("java") is None:
-        pytest.skip("Java no está instalado")
-
-    from pyspark.sql import SparkSession
-
-    spark = (
-        SparkSession.builder
-        .master("local[1]")
-        .appName("motor-spark-tests")
-        .config("spark.ui.enabled", "false")
-        .getOrCreate()
-    )
-    spark.sparkContext.setLogLevel("ERROR")
+    """Comparte una sola SparkSession para reducir el coste de arranque de JVM."""
+    spark = crear_spark_local("motor-spark-tests")
     yield spark
+
+    # Detener explícitamente la sesión evita que la JVM sobreviva al proceso de
+    # pruebas y contamine ejecuciones posteriores con configuración antigua.
     spark.stop()

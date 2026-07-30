@@ -6,16 +6,19 @@ import io
 import os
 import re
 import shutil
-import tempfile
-import uuid
+from collections.abc import Iterable
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any
+
+from typing_extensions import Self
 
 try:
     import paramiko
+
     HAS_PARAMIKO = True
 except ImportError:
     HAS_PARAMIKO = False
@@ -40,7 +43,7 @@ class UriLib:
     @classmethod
     def parsear(cls, uri: str) -> UriParseResult:
         if not isinstance(uri, str):
-            raise ValueError(f"URI debe ser string, recibido {type(uri).__name__}")
+            raise ValueError(f"URI debe ser string, recibido {type(uri).__name__}")  # noqa: TRY004
         match = cls.PATRON.match(uri)
         if not match:
             raise ValueError(f"URI invalida: {uri}")
@@ -57,7 +60,7 @@ class UriLib:
             raise ValueError("Nombre de conexion demasiado largo")
         for char in valor:
             if ord(char) < 32 or char in ("/", "\\", "@", "?", "#", "[", "]"):
-                raise ValueError(f"Caracter invalido en conexion: {repr(char)}")
+                raise ValueError(f"Caracter invalido en conexion: {char!r}")
         return valor
 
     @classmethod
@@ -77,9 +80,9 @@ class UriLib:
         componentes = valor.split("/")
         for comp in componentes:
             if not comp or comp in (".", "CON", "PRN", "AUX", "NUL", "COM1", "LPT1"):
-                raise ValueError(f"Componente invalido en ruta: {repr(comp)}")
+                raise ValueError(f"Componente invalido en ruta: {comp!r}")
             if comp.endswith("."):
-                raise ValueError(f"Componente no puede terminar en punto: {repr(comp)}")
+                raise ValueError(f"Componente no puede terminar en punto: {comp!r}")
         if not valor.endswith((".csv", ".txt")):
             raise ValueError("Destino debe ser .csv o .txt")
         return valor
@@ -99,17 +102,35 @@ class UriLib:
 
 
 class StagingManager:
+    _PATRON_COMPONENTE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
     def __init__(self, directorio_base: Path):
         self._directorio_base = directorio_base
         self._salidas_creadas: dict[tuple[str, str], Path] = {}
 
+    @classmethod
+    def _validar_componente(cls, valor: str, etiqueta: str) -> str:
+        """Acepta un único componente portable, nunca una ruta compuesta."""
+        if not isinstance(valor, str) or not cls._PATRON_COMPONENTE.fullmatch(valor):
+            raise ValueError(f"{etiqueta} inválido: debe ser un identificador atómico")
+        if valor in {".", ".."}:
+            raise ValueError(f"{etiqueta} inválido: debe ser un identificador atómico")
+        return valor
+
     def crear_staging(self, id_ejecucion: str) -> Path:
+        id_ejecucion = self._validar_componente(
+            id_ejecucion, "identificador de ejecución"
+        )
         staging_root = self._directorio_base / ".staging" / id_ejecucion
         staging_root.mkdir(parents=True, exist_ok=True)
         os.chmod(staging_root, 0o700)
         return staging_root
 
     def crear_staging_salida(self, id_ejecucion: str, nombre_salida: str) -> Path:
+        id_ejecucion = self._validar_componente(
+            id_ejecucion, "identificador de ejecución"
+        )
+        nombre_salida = self._validar_componente(nombre_salida, "nombre de salida")
         clave = (id_ejecucion, nombre_salida)
         if clave in self._salidas_creadas:
             raise ValueError(
@@ -118,15 +139,16 @@ class StagingManager:
         staging = self.crear_staging(id_ejecucion)
         salida_staging = staging / nombre_salida
         if salida_staging.exists():
-            raise ValueError(
-                f"Directorio de salida ya existe: {salida_staging}"
-            )
+            raise ValueError(f"Directorio de salida ya existe: {salida_staging}")
         salida_staging.mkdir(parents=False, exist_ok=False)
         os.chmod(salida_staging, 0o700)
         self._salidas_creadas[clave] = salida_staging
         return salida_staging
 
     def limpiar_staging(self, id_ejecucion: str) -> None:
+        id_ejecucion = self._validar_componente(
+            id_ejecucion, "identificador de ejecución"
+        )
         staging_path = self._directorio_base / ".staging" / id_ejecucion
         if staging_path.exists():
             shutil.rmtree(staging_path)
@@ -149,7 +171,8 @@ class CsvWriter:
 
     def _abrir(self) -> None:
         if self._archivo is None:
-            self._archivo = open(
+            # El descriptor se conserva entre llamadas y se cierra en ``cerrar``.
+            self._archivo = open(  # noqa: SIM115
                 self._path, "w", newline="", encoding="utf-8-sig"
             )
             writer = csv.writer(
@@ -176,15 +199,13 @@ class CsvWriter:
             return
         self._cerrado = True
         if self._archivo is not None:
-            try:
+            with suppress(OSError, ValueError):
                 self._archivo.flush()
                 self._archivo.close()
-            except Exception:
-                pass
             self._archivo = None
             self._writer = None
 
-    def __enter__(self) -> CsvWriter:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -223,7 +244,9 @@ class ManifiestoPublicacion:
     filas: int | None = None
     estado: EstadoPublicacion = EstadoPublicacion.PENDIENTE
     timestamp: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        default_factory=lambda: (
+            datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        )
     )
 
     def a_dict(self) -> dict[str, Any]:
@@ -283,12 +306,19 @@ class PublicacionSftp:
         self._clave_privada = clave_privada
         self._password = password
         self._timeout = timeout
-        self._cliente: "paramiko.SSHClient | None" = None
-        self._sftp: "paramiko.SFTPClient | None" = None
+        self._cliente: paramiko.SSHClient | None = None
+        self._sftp: paramiko.SFTPClient | None = None
 
-    def _crear_cliente(self) -> "paramiko.SSHClient":
+    def _crear_cliente(self) -> paramiko.SSHClient:
+        """Crea un cliente que rechaza hosts no registrados.
+
+        ``load_system_host_keys`` carga ``~/.ssh/known_hosts`` y las fuentes
+        configuradas por Paramiko. ``RejectPolicy`` evita aceptar una clave
+        distinta o desconocida de forma silenciosa.
+        """
         cliente = paramiko.SSHClient()  # type: ignore
-        cliente.get_host_keys()
+        cliente.load_system_host_keys()
+        cliente.set_missing_host_key_policy(paramiko.RejectPolicy())
         return cliente
 
     def conectar(self) -> None:
@@ -324,16 +354,13 @@ class PublicacionSftp:
 
     def cerrar(self) -> None:
         if self._sftp:
-            try:
+            # El cierre es best-effort y no debe ocultar el error principal.
+            with suppress(Exception):
                 self._sftp.close()
-            except Exception:
-                pass
             self._sftp = None
         if self._cliente:
-            try:
+            with suppress(Exception):
                 self._cliente.close()
-            except Exception:
-                pass
             self._cliente = None
 
     def publicar(
@@ -359,10 +386,9 @@ class PublicacionSftp:
             )
             sftp.rename(parcial_remoto, str(ruta_remota))
         except Exception as e:
-            try:
+            # El rollback remoto puede fallar si el servidor nunca creó el parcial.
+            with suppress(Exception):
                 sftp.remove(parcial_remoto)
-            except Exception:
-                pass
             self.cerrar()
             raise RuntimeError(f"Error en publicacion SFTP: {e}") from e
 
@@ -373,7 +399,7 @@ class PublicacionSftp:
             estado=EstadoPublicacion.PUBLICADO,
         )
 
-    def __enter__(self) -> PublicacionSftp:
+    def __enter__(self) -> Self:
         self.conectar()
         return self
 
@@ -383,6 +409,7 @@ class PublicacionSftp:
 
 try:
     from pyspark.sql import DataFrame, SparkSession
+
     HAS_PYSPARK = True
 except ImportError:
     HAS_PYSPARK = False
@@ -409,8 +436,7 @@ class AdaptadorSparkCsv:
         salida_staging.mkdir(parents=True, exist_ok=True)
 
         writer = (
-            df.writeStream
-            .format("csv")
+            df.writeStream.format("csv")
             .option("header", "true")
             .option("delimiter", ",")
             .option("encoding", "UTF-8")

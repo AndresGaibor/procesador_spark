@@ -1,63 +1,59 @@
+"""Fixtures específicas para las pruebas de integración del modo Dataflow."""
+
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 import pytest
 
+from tests.soporte_spark import crear_spark_local, spark_disponible
 
-def _check_spark_available():
-    try:
-        import pyspark
-    except ImportError:
-        return False
-    if shutil.which("java") is None:
-        return False
-    return True
-
-
-HAS_SPARK = _check_spark_available()
+# La constante permite que los módulos de pruebas marquen casos sin arrancar
+# Spark durante la fase de colección de pytest.
+HAS_SPARK = spark_disponible()
 
 
 @pytest.fixture(scope="session")
 def spark_local():
-    if not HAS_SPARK:
-        pytest.skip("PySpark o Java no disponible")
-
-    from pyspark.sql import SparkSession
-
-    spark = (
-        SparkSession.builder
-        .master("local[1]")
-        .appName("motor-spark-dataflow-tests")
-        .config("spark.ui.enabled", "false")
-        .config("spark.sql.caseSensitive", "true")
-        .getOrCreate()
+    """Crea Spark con nombres de columnas sensibles a mayúsculas como Qlik."""
+    spark = crear_spark_local(
+        "motor-spark-dataflow-tests",
+        case_sensitive=True,
     )
-    spark.sparkContext.setLogLevel("ERROR")
     yield spark
+
+    # El cierre explícito garantiza que una configuración case-sensitive no se
+    # reutilice accidentalmente en otra suite ejecutada en el mismo proceso.
     spark.stop()
 
 
 @pytest.fixture
-def recursos_dataflow():
+def recursos_dataflow() -> Path:
+    """Raíz única de scripts, catálogos y datos de prueba del compilador."""
     return Path(__file__).parent.parent / "recursos" / "dataflow"
 
 
 @pytest.fixture
-def script_path(recursos_dataflow):
+def script_path(recursos_dataflow: Path):
+    """Devuelve un resolvedor de nombres dentro del corpus de scripts Qlik."""
+
     def _get_script(nombre: str) -> Path:
         return recursos_dataflow / "scripts" / nombre
+
     return _get_script
 
 
 @pytest.fixture
-def conexion_path(recursos_dataflow):
+def conexion_path(recursos_dataflow: Path):
+    """Devuelve un resolvedor de catálogos de conexión de prueba."""
+
     def _get_conexion(nombre: str) -> Path:
         return recursos_dataflow / "conexiones" / nombre
+
     return _get_conexion
 
 
 @pytest.fixture
-def datos_path(recursos_dataflow):
+def datos_path(recursos_dataflow: Path) -> Path:
+    """Directorio con CSV pequeños usados por pruebas deterministas."""
     return recursos_dataflow / "datos"

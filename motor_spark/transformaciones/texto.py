@@ -29,8 +29,7 @@ def aplicar_normalizacion_texto(
                 expresion = F.upper(expresion)
             else:
                 raise ErrorReceta(
-                    f"Paso {numero_paso}: normalización "
-                    f"no soportada: {operacion}"
+                    f"Paso {numero_paso}: normalización no soportada: {operacion}"
                 )
         resultado = resultado.withColumn(columna, expresion)
 

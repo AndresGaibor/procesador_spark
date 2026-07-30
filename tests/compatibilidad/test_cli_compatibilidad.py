@@ -5,7 +5,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 RAIZ = Path(__file__).resolve().parents[2]
 
 
@@ -73,9 +72,7 @@ def test_help_es_identico_al_motor_original(tmp_path):
     )
 
     assert original.returncode == nuevo.returncode == 0
-    assert _normalizar_programa(original.stdout) == _normalizar_programa(
-        nuevo.stdout
-    )
+    assert _normalizar_programa(original.stdout) == _normalizar_programa(nuevo.stdout)
     assert original.stderr == nuevo.stderr == ""
 
 

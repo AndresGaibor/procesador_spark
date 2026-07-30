@@ -16,9 +16,7 @@ def aplicar_reparticion(
 
     cantidad = int(paso.cantidad)
     if cantidad < 1:
-        raise ErrorReceta(
-            f"Paso {numero_paso}: particiones inválidas"
-        )
+        raise ErrorReceta(f"Paso {numero_paso}: particiones inválidas")
 
     if paso.columnas:
         exigir_columnas(datos, paso.columnas, numero_paso)

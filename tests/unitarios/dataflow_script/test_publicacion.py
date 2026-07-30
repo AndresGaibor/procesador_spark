@@ -1,17 +1,12 @@
-import io
 import os
-import shutil
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from motor_spark.dataflow_script.publicacion import (
-    AdaptadorSparkCsv,
-    CsvWriter,
     HAS_PARAMIKO,
-    HAS_PYSPARK,
+    CsvWriter,
     ManifiestoPublicacion,
     PublicacionLocal,
     PublicacionSftp,
@@ -134,7 +129,7 @@ class TestStagingManager:
 
     def test_crear_staging_salida_permisos_0700(self, tmp_path):
         manager = StagingManager(tmp_path)
-        staging = manager.crear_staging("exec789")
+        manager.crear_staging("exec789")
         salida = manager.crear_staging_salida("exec789", "mi_salida")
         perms = os.stat(salida).st_mode & 0o777
         assert perms == 0o700
@@ -162,7 +157,7 @@ class TestStagingManager:
         staging1 = manager.crear_staging("exec333")
         (staging1 / "archivo_temporal.txt").write_text("test")
         manager.limpiar_staging("exec333")
-        staging2 = manager.crear_staging("exec333")
+        manager.crear_staging("exec333")
         assert not (staging1 / "archivo_temporal.txt").exists()
 
     def test_staging_salida_no_reutilizable_misma_ejecucion(self, tmp_path):
@@ -411,7 +406,9 @@ class TestManifiestoPublicacion:
 class TestPublicacionSftpMocks:
     @pytest.mark.skipif(not HAS_PARAMIKO, reason="paramiko no instalado")
     def test_sftp_load_host_keys(self):
-        with patch("motor_spark.dataflow_script.publicacion.paramiko.SSHClient") as mock_ssh:
+        with patch(
+            "motor_spark.dataflow_script.publicacion.paramiko.SSHClient"
+        ) as mock_ssh:
             mock_instance = MagicMock()
             mock_ssh.return_value = mock_instance
 
@@ -422,11 +419,13 @@ class TestPublicacionSftpMocks:
                 password="testpassword",
             )
             pub._crear_cliente()
-            mock_instance.get_host_keys.assert_called_once()
+            mock_instance.load_system_host_keys.assert_called_once_with()
 
     @pytest.mark.skipif(not HAS_PARAMIKO, reason="paramiko no instalado")
     def test_sftp_put_confirm_true(self):
-        with patch("motor_spark.dataflow_script.publicacion.paramiko.SSHClient") as mock_ssh:
+        with patch(
+            "motor_spark.dataflow_script.publicacion.paramiko.SSHClient"
+        ) as mock_ssh:
             mock_instance = MagicMock()
             mock_sftp = MagicMock()
             mock_instance.open_sftp.return_value = mock_sftp
@@ -455,7 +454,9 @@ class TestPublicacionSftpMocks:
 
     @pytest.mark.skipif(not HAS_PARAMIKO, reason="paramiko no instalado")
     def test_sftp_cierre_en_finally(self):
-        with patch("motor_spark.dataflow_script.publicacion.paramiko.SSHClient") as mock_ssh:
+        with patch(
+            "motor_spark.dataflow_script.publicacion.paramiko.SSHClient"
+        ) as mock_ssh:
             mock_instance = MagicMock()
             mock_sftp = MagicMock()
             mock_instance.open_sftp.return_value = mock_sftp
@@ -475,7 +476,9 @@ class TestPublicacionSftpMocks:
 
     @pytest.mark.skipif(not HAS_PARAMIKO, reason="paramiko no instalado")
     def test_sftp_context_manager(self):
-        with patch("motor_spark.dataflow_script.publicacion.paramiko.SSHClient") as mock_ssh:
+        with patch(
+            "motor_spark.dataflow_script.publicacion.paramiko.SSHClient"
+        ) as mock_ssh:
             mock_instance = MagicMock()
             mock_sftp = MagicMock()
             mock_instance.open_sftp.return_value = mock_sftp
@@ -486,7 +489,7 @@ class TestPublicacionSftpMocks:
                 puerto=22,
                 usuario="testuser",
                 password="testpassword",
-            ) as pub:
+            ):
                 pass
 
             mock_sftp.close.assert_called()
@@ -494,7 +497,9 @@ class TestPublicacionSftpMocks:
 
     @pytest.mark.skipif(not HAS_PARAMIKO, reason="paramiko no instalado")
     def test_sftp_rename_after_put(self):
-        with patch("motor_spark.dataflow_script.publicacion.paramiko.SSHClient") as mock_ssh:
+        with patch(
+            "motor_spark.dataflow_script.publicacion.paramiko.SSHClient"
+        ) as mock_ssh:
             mock_instance = MagicMock()
             mock_sftp = MagicMock()
             mock_instance.open_sftp.return_value = mock_sftp
@@ -520,7 +525,9 @@ class TestPublicacionSftpMocks:
 
     @pytest.mark.skipif(not HAS_PARAMIKO, reason="paramiko no instalado")
     def test_sftp_timeout_configurado(self):
-        with patch("motor_spark.dataflow_script.publicacion.paramiko.SSHClient") as mock_ssh:
+        with patch(
+            "motor_spark.dataflow_script.publicacion.paramiko.SSHClient"
+        ) as mock_ssh:
             mock_instance = MagicMock()
             mock_sftp = MagicMock()
             mock_instance.open_sftp.return_value = mock_sftp
@@ -540,7 +547,9 @@ class TestPublicacionSftpMocks:
 
     @pytest.mark.skipif(not HAS_PARAMIKO, reason="paramiko no instalado")
     def test_sftp_no_auto_add_policy(self):
-        with patch("motor_spark.dataflow_script.publicacion.paramiko.SSHClient") as mock_ssh:
+        with patch(
+            "motor_spark.dataflow_script.publicacion.paramiko.SSHClient"
+        ) as mock_ssh:
             mock_instance = MagicMock()
             mock_ssh.return_value = mock_instance
 
@@ -558,7 +567,9 @@ class TestPublicacionSftpMocks:
 
     @pytest.mark.skipif(not HAS_PARAMIKO, reason="paramiko no instalado")
     def test_sftp_cierra_en_excepcion_put(self):
-        with patch("motor_spark.dataflow_script.publicacion.paramiko.SSHClient") as mock_ssh:
+        with patch(
+            "motor_spark.dataflow_script.publicacion.paramiko.SSHClient"
+        ) as mock_ssh:
             mock_instance = MagicMock()
             mock_sftp = MagicMock()
             mock_sftp.put.side_effect = RuntimeError("put fallo")
@@ -603,8 +614,8 @@ class TestStagingManagerConcurrencia:
             assert not staging.exists()
 
     def test_staging_no_hay_condiciones_de_carrera(self, tmp_path):
-        import threading
         import queue
+        import threading
 
         manager = StagingManager(tmp_path)
         resultados = queue.Queue()
@@ -628,7 +639,7 @@ class TestStagingManagerConcurrencia:
             h.join()
 
         while not resultados.empty():
-            op, id_, path = resultados.get()
+            _op, id_, path = resultados.get()
             assert path.exists(), f"{id_} deberia existir"
 
         manager2 = StagingManager(tmp_path)
@@ -641,3 +652,40 @@ class TestStagingManagerConcurrencia:
 
 
 import csv
+
+
+@pytest.mark.skipif(not HAS_PARAMIKO, reason="paramiko no instalado")
+def test_sftp_carga_host_keys_del_sistema_y_rechaza_desconocidos():
+    with patch(
+        "motor_spark.dataflow_script.publicacion.paramiko.SSHClient"
+    ) as mock_ssh:
+        mock_instance = MagicMock()
+        mock_ssh.return_value = mock_instance
+
+        pub = PublicacionSftp(
+            host="servidor.example.com",
+            puerto=22,
+            usuario="testuser",
+            password="testpassword",
+        )
+        pub._crear_cliente()
+
+        mock_instance.load_system_host_keys.assert_called_once_with()
+        mock_instance.set_missing_host_key_policy.assert_called_once()
+        policy = mock_instance.set_missing_host_key_policy.call_args.args[0]
+        assert policy.__class__.__name__ == "RejectPolicy"
+
+
+@pytest.mark.parametrize("valor", ["../escape", "a/b", ".", "", ".."])
+def test_staging_rechaza_identificadores_no_atomicos(tmp_path, valor):
+    manager = StagingManager(tmp_path)
+    with pytest.raises(ValueError, match="identificador"):
+        manager.crear_staging(valor)
+
+
+@pytest.mark.parametrize("valor", ["../salida", "a/b", ".", "", ".."])
+def test_staging_rechaza_nombres_de_salida_no_atomicos(tmp_path, valor):
+    manager = StagingManager(tmp_path)
+    manager.crear_staging("exec-segura")
+    with pytest.raises(ValueError, match="nombre de salida"):
+        manager.crear_staging_salida("exec-segura", valor)

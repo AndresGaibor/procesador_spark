@@ -12,7 +12,6 @@ from motor_spark.plan.modelos import (
     PlanDataflow,
     Proyectar,
     Publicar,
-    TipoOperacion,
     Unir,
 )
 

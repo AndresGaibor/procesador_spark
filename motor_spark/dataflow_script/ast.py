@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Sequence
 
 
 class TipoToken(Enum):
@@ -89,6 +89,13 @@ class SentenciaSelect:
 
 @dataclass(frozen=True, slots=True)
 class SentenciaLoad:
+    """LOAD de Qlik con sus proyecciones y cláusulas preservadas.
+
+    ``campos`` se conserva por compatibilidad con la primera versión del AST;
+    las nuevas rutas deben usar ``proyecciones`` porque también representa
+    funciones, cálculos y aliases.
+    """
+
     ruta: str
     expresion: Expresion | None = None
     campos: tuple[str, ...] = ()
@@ -96,6 +103,15 @@ class SentenciaLoad:
     es_resident: bool = False
     etiqueta_resident: str | None = None
     noconcatenate: bool = False
+    proyecciones: tuple[ProjectionItem, ...] = ()
+    condiciones_where: tuple[Expresion, ...] = ()
+    group_by: tuple[Expresion, ...] = ()
+    # Los prefijos globales de Qlik modifican la carga que aparece justo
+    # después. Guardarlos en la propia sentencia impide perder esa relación
+    # cuando el AST reorganiza el script en etiquetas.
+    concatenate_objetivo: str | None = None
+    join_objetivo: str | None = None
+    join_tipo: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,12 +156,18 @@ class SentenciaConcatenate:
 @dataclass(frozen=True, slots=True)
 class Etiqueta:
     nombre: str
-    sentencias: tuple[SentenciaSelect | SentenciaLoad | SentenciaResident | SentenciaDropTable | SentenciaStore | SentenciaConcatenate, ...]
+    sentencias: tuple[
+        SentenciaSelect
+        | SentenciaLoad
+        | SentenciaResident
+        | SentenciaDropTable
+        | SentenciaStore
+        | SentenciaConcatenate,
+        ...,
+    ]
 
 
 @dataclass(frozen=True, slots=True)
 class ProgramaDataflowScript:
-    sentencias_globales: tuple[
-        SentenciaSet | SentenciaLibConnectTo, ...
-    ]
+    sentencias_globales: tuple[SentenciaSet | SentenciaLibConnectTo, ...]
     etiquetas: tuple[Etiqueta, ...]

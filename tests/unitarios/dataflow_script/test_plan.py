@@ -9,30 +9,26 @@ from motor_spark.conexiones.modelos import (
     CampoAllowlist,
     CatalogoConexiones,
     ConexionJdbc,
-    ConexionLocal,
-    ConexionSftp,
-    TipoConexion,
 )
-from motor_spark.conexiones.sanitizacion import SanitizadorInput, ValidadorCatalogos
+from motor_spark.conexiones.sanitizacion import SanitizadorInput
 from motor_spark.conexiones.secretos import AdministradorSecretos, ValidadorSecretos
 from motor_spark.plan.compilador import compilar
 from motor_spark.plan.explicador import explicar_breve, explicar_plan
 from motor_spark.plan.modelos import (
-    Agregar,
     CargarCsv,
     CargarLocal,
-    Concatenar,
-    EliminarTabla,
     Filtrar,
     LeerJdbc,
     PlanDataflow,
     Proyectar,
     Publicar,
     TipoOperacion,
-    Unir,
     generar_id_estable,
 )
-from motor_spark.plan.serializador import SerializadorPlan, deserializar_plan, serializar_plan
+from motor_spark.plan.serializador import (
+    deserializar_plan,
+    serializar_plan,
+)
 
 
 def test_generar_id_estable():
@@ -53,6 +49,7 @@ def test_plan_frozen():
 def test_operaciones_frozen():
     op = LeerJdbc(
         id="test123",
+        nombre_tabla="mitabla",
         conexion_nombre="conn1",
         esquema="dbo",
         tabla="mitabla",
@@ -65,6 +62,7 @@ def test_plan_hash_determista():
     ops = (
         LeerJdbc(
             id="op1",
+            nombre_tabla="mitabla",
             conexion_nombre="conn1",
             esquema="dbo",
             tabla="mitabla",
@@ -77,7 +75,9 @@ def test_plan_hash_determista():
 
 def test_plan_id_por_posicion():
     ops = (
-        LeerJdbc(id="op1", conexion_nombre="c1", esquema="e1", tabla="t1"),
+        LeerJdbc(
+            id="op1", nombre_tabla="t1", conexion_nombre="c1", esquema="e1", tabla="t1"
+        ),
         Proyectar(id="op2", tabla_origen="t1", campos=("a", "b")),
     )
     plan = PlanDataflow(operaciones=ops)
@@ -88,7 +88,9 @@ def test_plan_id_por_posicion():
 
 def test_serializador_redondo():
     ops = (
-        LeerJdbc(id="op1", conexion_nombre="c1", esquema="e1", tabla="t1"),
+        LeerJdbc(
+            id="op1", nombre_tabla="t1", conexion_nombre="c1", esquema="e1", tabla="t1"
+        ),
     )
     plan = PlanDataflow(version=1, operaciones=ops)
     json_str = serializar_plan(plan)
@@ -98,7 +100,9 @@ def test_serializador_redondo():
 
 def test_explicar_breve():
     ops = (
-        LeerJdbc(id="op1", conexion_nombre="c1", esquema="e1", tabla="t1"),
+        LeerJdbc(
+            id="op1", nombre_tabla="t1", conexion_nombre="c1", esquema="e1", tabla="t1"
+        ),
         Proyectar(id="op2", tabla_origen="t1", campos=("a", "b")),
         Filtrar(id="op3", tabla_origen="t1", condicion="a > 1"),
     )
@@ -111,7 +115,9 @@ def test_explicar_breve():
 
 def test_explicar_plan():
     ops = (
-        LeerJdbc(id="op1", conexion_nombre="c1", esquema="e1", tabla="t1"),
+        LeerJdbc(
+            id="op1", nombre_tabla="t1", conexion_nombre="c1", esquema="e1", tabla="t1"
+        ),
     )
     plan = PlanDataflow(operaciones=ops)
     resultado = explicar_plan(plan)
@@ -214,3 +220,119 @@ def test_cargar_catalogo_json():
     assert cat.version == 1
     assert len(cat.jdbc) == 1
     assert cat.jdbc[0].nombre == "conn1"
+
+
+def test_serializador_preserva_campos_y_subtipo_de_operacion():
+    """Un plan persistido debe poder ejecutarse sin volver a leer el script Qlik."""
+    operacion = LeerJdbc(
+        id="leer-clientes",
+        nombre_tabla="Clientes",
+        conexion_nombre="Postgres",
+        esquema="demo",
+        tabla="clientes",
+        campos=("cliente_id", "nombres"),
+    )
+    plan = PlanDataflow(operaciones=(operacion,), tabla_resultado="Clientes")
+
+    serializado = serializar_plan(plan)
+    restaurado = deserializar_plan(serializado)
+
+    assert '"conexion_nombre": "Postgres"' in serializado
+    assert isinstance(restaurado.operaciones[0], LeerJdbc)
+    assert restaurado.operaciones[0] == operacion
+
+
+def test_compilador_conserva_nombres_logicos_y_ultima_tabla():
+    """DROP y STORE hacen referencia a etiquetas Qlik, no a IDs internos."""
+    script = """
+    [Ventas]: LOAD [venta_id] FROM [lib://SFTP//datos/ventas.csv];
+    [Sucursales]: LOAD [sucursal_id] FROM [lib://SFTP//datos/sucursales.csv];
+    DROP TABLE [Ventas];
+    STORE [Sucursales] INTO [lib://SFTP//salida/sucursales.csv] (txt);
+    """
+    from motor_spark.dataflow_script.lexer import tokenizar
+    from motor_spark.dataflow_script.parser import parsear
+
+    tokens, errores_lexicos = tokenizar(script)
+    programa, errores_parser = parsear(tokens)
+    plan = compilar(programa)
+
+    assert errores_lexicos == []
+    assert errores_parser == []
+    assert isinstance(plan.operaciones[0], CargarCsv)
+    assert plan.operaciones[0].nombre_tabla == "Ventas"
+    assert isinstance(plan.operaciones[1], Proyectar)
+    assert plan.operaciones[1].tabla_origen == "Ventas"
+    assert isinstance(plan.operaciones[-1], Publicar)
+    assert plan.operaciones[-1].tabla_origen == "Sucursales"
+    assert plan.tabla_resultado == "Sucursales"
+
+
+def test_compila_select_sobre_tabla_logica_ya_cargada():
+    """Un SELECT de una etiqueta viva no debe abrir una conexión JDBC."""
+    script = """
+    [Datos]: LOAD [id], [nombre] FROM [lib://Archivos/entrada.csv];
+    SELECT [id], [nombre] FROM "Datos";
+    """
+    from motor_spark.dataflow_script.lexer import tokenizar
+    from motor_spark.dataflow_script.parser import parsear
+
+    tokens, errores_lexicos = tokenizar(script)
+    programa, errores_parser = parsear(tokens)
+    plan = compilar(programa)
+
+    assert errores_lexicos == []
+    assert errores_parser == []
+    assert plan.metadata["errores"] == ()
+    assert sum(isinstance(op, CargarCsv) for op in plan.operaciones) == 1
+    assert not any(isinstance(op, LeerJdbc) for op in plan.operaciones)
+    assert plan.tabla_resultado == "Datos"
+
+
+def test_compila_preceding_load_simple_en_orden_de_ejecucion():
+    """El SELECT inferior se ejecuta antes del LOAD escrito encima."""
+    script = """
+    LIB CONNECT TO [Postgres];
+    [Clientes]:
+    LOAD [cliente_id], [nombres];
+    SELECT "cliente_id", "nombres" FROM "demo"."clientes";
+    """
+    from motor_spark.dataflow_script.lexer import tokenizar
+    from motor_spark.dataflow_script.parser import parsear
+
+    tokens, errores_lexicos = tokenizar(script)
+    programa, errores_parser = parsear(tokens)
+    plan = compilar(programa)
+
+    assert errores_lexicos == []
+    assert errores_parser == []
+    assert plan.metadata["errores"] == ()
+    assert isinstance(plan.operaciones[0], LeerJdbc)
+    assert plan.operaciones[0].nombre_tabla == "Clientes"
+    assert isinstance(plan.operaciones[-1], Proyectar)
+    assert plan.operaciones[-1].tabla_origen == "Clientes"
+
+
+def test_roundtrip_no_confunde_cargar_local_con_cargar_csv():
+    """Operaciones con campos similares deben conservar su clase concreta."""
+
+    plan = PlanDataflow(
+        operaciones=(
+            CargarCsv(
+                id="csv",
+                nombre_tabla="Entrada",
+                ruta="lib://Archivos/entrada.csv",
+            ),
+            CargarLocal(
+                id="resident",
+                nombre_tabla="Curada",
+                ruta="Entrada",
+            ),
+        )
+    )
+
+    restaurado = deserializar_plan(serializar_plan(plan))
+
+    assert isinstance(restaurado.operaciones[0], CargarCsv)
+    assert isinstance(restaurado.operaciones[1], CargarLocal)
+    assert restaurado.operaciones[1].tipo == TipoOperacion.CARGAR_LOCAL

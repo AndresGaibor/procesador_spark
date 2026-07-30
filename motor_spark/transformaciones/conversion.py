@@ -21,9 +21,7 @@ def aplicar_conversion_tipo(
 
     if destino in {"date", "fecha"}:
         expresion = (
-            F.to_date(F.col(columna), formato)
-            if formato
-            else F.to_date(F.col(columna))
+            F.to_date(F.col(columna), formato) if formato else F.to_date(F.col(columna))
         )
     elif destino == "timestamp":
         expresion = (

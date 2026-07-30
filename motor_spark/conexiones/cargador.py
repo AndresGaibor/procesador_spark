@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any
 
-from motor_spark.conexiones.modelos import CatalogoConexiones, CampoAllowlist, ConexionJdbc, ConexionLocal, ConexionSftp
+from motor_spark.conexiones.modelos import (
+    CampoAllowlist,
+    CatalogoConexiones,
+    ConexionJdbc,
+    ConexionLocal,
+    ConexionSftp,
+)
 
 
 class CargadorConexiones:
@@ -14,52 +19,72 @@ class CargadorConexiones:
 
     def cargar(self) -> CatalogoConexiones:
         if not self._ruta.exists():
-            raise FileNotFoundError(f"Catalogo de conexiones no encontrado: {self._ruta}")
+            raise FileNotFoundError(
+                f"Catalogo de conexiones no encontrado: {self._ruta}"
+            )
 
         contenido = self._ruta.read_text(encoding="utf-8")
         datos = json.loads(contenido)
 
         jdbc = []
         for j in datos.get("jdbc", []):
-            jdbc.append(ConexionJdbc(
-                tipo=j.get("tipo", "jdbc"),
-                nombre=j["nombre"],
-                url=j["url"],
-                driver=j["driver"],
-                secreto_nombre=j["secreto_nombre"],
-                allowlist=tuple(
-                    CampoAllowlist(esquema=a["esquema"], tabla=a["tabla"], campos=tuple(a.get("campos", [])))
-                    for a in j.get("allowlist", [])
-                ),
-                propiedades=j.get("propiedades", {}),
-            ))
+            jdbc.append(
+                ConexionJdbc(
+                    tipo=j.get("tipo", "jdbc"),
+                    nombre=j["nombre"],
+                    url=j["url"],
+                    driver=j["driver"],
+                    secreto_nombre=j["secreto_nombre"],
+                    allowlist=tuple(
+                        CampoAllowlist(
+                            esquema=a["esquema"],
+                            tabla=a["tabla"],
+                            campos=tuple(a.get("campos", [])),
+                        )
+                        for a in j.get("allowlist", [])
+                    ),
+                    propiedades=j.get("propiedades", {}),
+                )
+            )
 
         locales = []
         for l in datos.get("locales", []):
-            locales.append(ConexionLocal(
-                tipo=l.get("tipo", "local"),
-                nombre=l["nombre"],
-                ruta_base=l["ruta_base"],
-                allowlist=tuple(
-                    CampoAllowlist(esquema=a.get("esquema", ""), tabla=a["tabla"], campos=tuple(a.get("campos", [])))
-                    for a in l.get("allowlist", [])
-                ),
-            ))
+            locales.append(
+                ConexionLocal(
+                    tipo=l.get("tipo", "local"),
+                    nombre=l["nombre"],
+                    ruta_base=l["ruta_base"],
+                    allowlist=tuple(
+                        CampoAllowlist(
+                            esquema=a.get("esquema", ""),
+                            tabla=a["tabla"],
+                            campos=tuple(a.get("campos", [])),
+                        )
+                        for a in l.get("allowlist", [])
+                    ),
+                )
+            )
 
         sftp = []
         for s in datos.get("sftp", []):
-            sftp.append(ConexionSftp(
-                tipo=s.get("tipo", "sftp"),
-                nombre=s["nombre"],
-                host=s["host"],
-                puerto=s.get("puerto", 22),
-                secreto_nombre=s["secreto_nombre"],
-                ruta_base=s.get("ruta_base", "/"),
-                allowlist=tuple(
-                    CampoAllowlist(esquema=a.get("esquema", ""), tabla=a["tabla"], campos=tuple(a.get("campos", [])))
-                    for a in s.get("allowlist", [])
-                ),
-            ))
+            sftp.append(
+                ConexionSftp(
+                    tipo=s.get("tipo", "sftp"),
+                    nombre=s["nombre"],
+                    host=s["host"],
+                    puerto=s.get("puerto", 22),
+                    secreto_nombre=s["secreto_nombre"],
+                    ruta_base=s.get("ruta_base", "/"),
+                    allowlist=tuple(
+                        CampoAllowlist(
+                            esquema=a.get("esquema", ""),
+                            tabla=a["tabla"],
+                            campos=tuple(a.get("campos", [])),
+                        )
+                        for a in s.get("allowlist", [])
+                    ),
+                )
+            )
 
         return CatalogoConexiones(
             version=datos.get("version", 1),

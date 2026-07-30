@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import argparse
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,9 +76,7 @@ def _parsear_secretos(
 
 
 def _crear_parser_dataflow_script() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Motor Spark con scripts dataflow"
-    )
+    parser = argparse.ArgumentParser(description="Motor Spark con scripts dataflow")
 
     grupo = parser.add_mutually_exclusive_group(required=True)
     grupo.add_argument(
@@ -126,6 +124,7 @@ def _crear_parser_dataflow_script() -> argparse.ArgumentParser:
 def _detectar_modo(argv: Sequence[str] | None) -> str:
     if argv is None:
         import sys
+
         argv = sys.argv[1:]
 
     for arg in argv:

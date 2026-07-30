@@ -23,11 +23,7 @@ def construir_agregacion(metrica: MetricaConfig) -> Any:
     elif operacion == "max":
         expresion = F.max(F.col(columna))
     elif operacion == "count":
-        expresion = (
-            F.count(F.lit(1))
-            if columna == "*"
-            else F.count(F.col(columna))
-        )
+        expresion = F.count(F.lit(1)) if columna == "*" else F.count(F.col(columna))
     elif operacion == "count_distinct":
         expresion = F.countDistinct(F.col(columna))
     elif operacion == "first":
@@ -47,9 +43,7 @@ def aplicar_agrupacion(
 ) -> Any:
     exigir_columnas(datos, paso.columnas, numero_paso)
     if not paso.metricas:
-        raise ErrorReceta(
-            f"Paso {numero_paso}: la agrupación no tiene métricas"
-        )
+        raise ErrorReceta(f"Paso {numero_paso}: la agrupación no tiene métricas")
 
     expresiones: list[Any] = []
     for metrica in paso.metricas:

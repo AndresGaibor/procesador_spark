@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-
 GOLDEN_DIR_ENV = os.environ.get("QLIK_GOLDEN_DIR")
 
 pytestmark = pytest.mark.skipif(
@@ -33,9 +32,7 @@ class TestQlikGoldenArtefacts:
     def test_qlik_golden_dir_existe(self):
         golden_dir = _golden_dir()
         if not golden_dir.exists():
-            pytest.fail(
-                f"QLIK_GOLDEN_DIR={golden_dir} pero el directorio no existe"
-            )
+            pytest.fail(f"QLIK_GOLDEN_DIR={golden_dir} pero el directorio no existe")
 
     def test_manifest_sha256_valido(self):
         golden_dir = _golden_dir()
@@ -99,7 +96,7 @@ class TestQlikGoldenArtefacts:
         golden_bytes = golden_csv.read_bytes()
 
         assert output_bytes == golden_bytes, (
-            f"output.csv difiere byte-a-byte de output_golden.csv"
+            "output.csv difiere byte-a-byte de output_golden.csv"
         )
 
     def test_output_csv_semantica_mismas_filas(self):
@@ -113,7 +110,9 @@ class TestQlikGoldenArtefacts:
         def leer_csv_ordenado(path: Path) -> list[dict[str, str]]:
             with open(path, "r", encoding="utf-8-sig", newline="") as f:
                 reader = csv.DictReader(f)
-                return sorted([dict(row) for row in reader], key=lambda r: tuple(r.items()))
+                return sorted(
+                    [dict(row) for row in reader], key=lambda r: tuple(r.items())
+                )
 
         filas_out = leer_csv_ordenado(output_csv)
         filas_golden = leer_csv_ordenado(golden_csv)

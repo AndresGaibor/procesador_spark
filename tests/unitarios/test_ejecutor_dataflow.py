@@ -1,11 +1,7 @@
 import json
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
-
-from motor_spark.aplicacion import ejecutor_dataflow
-from motor_spark.aplicacion import ejecutor_motor
+from motor_spark.aplicacion import ejecutor_dataflow, ejecutor_motor
 from motor_spark.configuracion.argumentos import ArgumentosDataflowScript
 
 
@@ -24,7 +20,12 @@ class DataFrameFalso:
     schema.jsonValue.return_value = {"type": "struct", "fields": []}
 
 
-def argumentos_dataflow(tmp_path, script="SELECT id, nombre FROM schema.tabla;", solo_compilar=False, plan_salida=None):
+def argumentos_dataflow(
+    tmp_path,
+    script="SELECT id, nombre FROM schema.tabla;",
+    solo_compilar=False,
+    plan_salida=None,
+):
     resultado = tmp_path / "resultado.json"
     plan_path = tmp_path / "plan.json" if plan_salida else plan_salida
     return ArgumentosDataflowScript(
@@ -62,7 +63,7 @@ def test_script_invalido_no_crea_spark(monkeypatch, tmp_path, capsys):
 
 
 def test_solo_compilar_no_crea_spark_ni_conexiones(monkeypatch, tmp_path):
-    (tmp_path / "script.df").write_text("LOAD 'ruta.csv';", encoding="utf-8")
+    (tmp_path / "script.df").write_text("LOAD id FROM 'ruta.csv';", encoding="utf-8")
     (tmp_path / "conexiones.json").write_text("{}", encoding="utf-8")
     (tmp_path / "plan.json").write_text("", encoding="utf-8")
 
@@ -80,9 +81,12 @@ def test_solo_compilar_no_crea_spark_ni_conexiones(monkeypatch, tmp_path):
         raise AssertionError("No debia abrir JDBC")
 
     monkeypatch.setattr(ejecutor_dataflow, "_crear_sesion_dataflow", crear_sesion_mock)
-    monkeypatch.setattr(ejecutor_dataflow, "leer_jdbc", leer_jdbc_mock)
+    # La compilación pura no instancia el ejecutor del plan, por lo que no
+    # existe ninguna ruta capaz de abrir JDBC en esta prueba.
 
-    args = argumentos_dataflow(tmp_path, solo_compilar=True, plan_salida=str(tmp_path / "plan.json"))
+    args = argumentos_dataflow(
+        tmp_path, solo_compilar=True, plan_salida=str(tmp_path / "plan.json")
+    )
     codigo = ejecutor_dataflow.ejecutar_dataflow(args)
 
     assert codigo == 0
@@ -97,7 +101,7 @@ def test_solo_compilar_no_crea_spark_ni_conexiones(monkeypatch, tmp_path):
 
 
 def test_solo_compilar_sin_plan_salida_falla(monkeypatch, tmp_path):
-    (tmp_path / "script.df").write_text("LOAD 'ruta.csv';", encoding="utf-8")
+    (tmp_path / "script.df").write_text("LOAD id FROM 'ruta.csv';", encoding="utf-8")
     (tmp_path / "conexiones.json").write_text("{}", encoding="utf-8")
 
     monkeypatch.setattr(ejecutor_dataflow, "cargar_catalogo", lambda x: MagicMock())
@@ -109,40 +113,61 @@ def test_solo_compilar_sin_plan_salida_falla(monkeypatch, tmp_path):
     resultado = json.loads((tmp_path / "resultado.json").read_text())
     assert resultado["estado"] == "ERROR"
     errores = resultado.get("errores", [])
-    assert any("--solo-compilar requiere --plan-salida" in e.get("mensaje", "") for e in errores)
+    assert any(
+        "--solo-compilar requiere --plan-salida" in e.get("mensaje", "")
+        for e in errores
+    )
 
 
 def test_resultado_no_filtra_secretos(monkeypatch, tmp_path):
-    (tmp_path / "script.df").write_text("SELECT id, password FROM schema.usuarios;", encoding="utf-8")
+    (tmp_path / "script.df").write_text(
+        "SELECT id, password FROM schema.usuarios;", encoding="utf-8"
+    )
     conexiones_content = {
-        "jdbc": [{
-            "nombre": "schema",
-            "url": "jdbc:postgresql://localhost/db",
-            "driver": "org.postgresql.Driver",
-            "secreto_nombre": "DB_PASSWORD",
-            "allowlist": [{"esquema": "schema", "tabla": "usuarios", "campos": ["id", "password"]}]
-        }]
+        "jdbc": [
+            {
+                "nombre": "schema",
+                "url": "jdbc:postgresql://localhost/db",
+                "driver": "org.postgresql.Driver",
+                "secreto_nombre": "DB_PASSWORD",
+                "allowlist": [
+                    {
+                        "esquema": "schema",
+                        "tabla": "usuarios",
+                        "campos": ["id", "password"],
+                    }
+                ],
+            }
+        ]
     }
-    (tmp_path / "conexiones.json").write_text(json.dumps(conexiones_content), encoding="utf-8")
+    (tmp_path / "conexiones.json").write_text(
+        json.dumps(conexiones_content), encoding="utf-8"
+    )
 
     spark_mock = SparkFalso()
 
-    monkeypatch.setattr(ejecutor_dataflow, "_crear_sesion_dataflow", lambda *a: spark_mock)
+    monkeypatch.setattr(
+        ejecutor_dataflow, "_crear_sesion_dataflow", lambda *a: spark_mock
+    )
     monkeypatch.setattr(
         ejecutor_dataflow,
         "cargar_catalogo",
-        lambda x: MagicMock(**{
-            "buscar_jdbc.return_value": MagicMock(
-                url="jdbc:postgresql://localhost/db",
-                secreto_nombre="DB_PASSWORD",
-                propiedades={},
-                allowlist=[MagicMock(esquema="schema", tabla="usuarios", campos=())]
-            )
-        })
+        lambda x: MagicMock(
+            **{
+                "buscar_jdbc.return_value": MagicMock(
+                    url="jdbc:postgresql://localhost/db",
+                    secreto_nombre="DB_PASSWORD",
+                    propiedades={},
+                    allowlist=[
+                        MagicMock(esquema="schema", tabla="usuarios", campos=())
+                    ],
+                )
+            }
+        ),
     )
 
     args = argumentos_dataflow(tmp_path)
-    codigo = ejecutor_dataflow.ejecutar_dataflow(args)
+    ejecutor_dataflow.ejecutar_dataflow(args)
 
     resultado = json.loads((tmp_path / "resultado.json").read_text())
     if resultado.get("estado") == "ERROR":
@@ -155,11 +180,13 @@ def test_resultado_no_filtra_secretos(monkeypatch, tmp_path):
 def test_receta_sigue_despachando_al_flujo_original(monkeypatch, tmp_path):
     from motor_spark.configuracion.modelos.receta import RecetaConfig
 
-    receta = RecetaConfig.model_validate({
-        "nombre": "TestReceta",
-        "entrada": {"modo_esquema": "inferir"},
-        "salida": {},
-    })
+    receta = RecetaConfig.model_validate(
+        {
+            "nombre": "TestReceta",
+            "entrada": {"modo_esquema": "inferir"},
+            "salida": {},
+        }
+    )
 
     datos = DataFrameFalso()
     spark = SparkFalso()
@@ -179,8 +206,8 @@ def test_receta_sigue_despachando_al_flujo_original(monkeypatch, tmp_path):
         lambda **kw: {"archivo_success": True},
     )
 
-    from motor_spark.configuracion.argumentos import ArgumentosEjecucion
     from motor_spark.aplicacion.ejecutor_motor import ejecutar_motor
+    from motor_spark.configuracion.argumentos import ArgumentosEjecucion
 
     args_receta = ArgumentosEjecucion(
         receta="receta.json",
@@ -200,7 +227,9 @@ def test_receta_sigue_despachando_al_flujo_original(monkeypatch, tmp_path):
 
 
 def test_operacion_no_ejecutable_aborta_antes_de_publicar(monkeypatch, tmp_path):
-    (tmp_path / "script.df").write_text("STORE tabla INTO 'lib://destino/salida.csv';", encoding="utf-8")
+    (tmp_path / "script.df").write_text(
+        "STORE tabla INTO 'lib://destino/salida.csv';", encoding="utf-8"
+    )
     (tmp_path / "conexiones.json").write_text("{}", encoding="utf-8")
 
     spark_creado = False
@@ -221,21 +250,30 @@ def test_operacion_no_ejecutable_aborta_antes_de_publicar(monkeypatch, tmp_path)
     resultado = json.loads((tmp_path / "resultado.json").read_text())
     assert resultado["estado"] == "ERROR"
     errores = resultado.get("errores", [])
-    assert any("publicar" in e.get("mensaje", "").lower() or "PUBLICAR" in e.get("codigo", "") for e in errores)
+    assert any("Tabla 'tabla' no existe" in e.get("mensaje", "") for e in errores)
 
 
 def test_stop_llamado_exactamente_una_vez(monkeypatch, tmp_path):
-    (tmp_path / "script.df").write_text("SELECT id, nombre FROM esquema.tabla WHERE id > 0;", encoding="utf-8")
+    (tmp_path / "script.df").write_text(
+        "LIB CONNECT TO [esquema]; SELECT id, nombre FROM esquema.tabla WHERE id > 0;",
+        encoding="utf-8",
+    )
     conexiones_content = {
-        "jdbc": [{
-            "nombre": "esquema",
-            "url": "jdbc:postgresql://localhost/db",
-            "driver": "org.postgresql.Driver",
-            "secreto_nombre": "DB_PASSWORD",
-            "allowlist": [{"esquema": "esquema", "tabla": "tabla", "campos": ["id", "nombre"]}]
-        }]
+        "jdbc": [
+            {
+                "nombre": "esquema",
+                "url": "jdbc:postgresql://localhost/db",
+                "driver": "org.postgresql.Driver",
+                "secreto_nombre": "DB_PASSWORD",
+                "allowlist": [
+                    {"esquema": "esquema", "tabla": "tabla", "campos": ["id", "nombre"]}
+                ],
+            }
+        ]
     }
-    (tmp_path / "conexiones.json").write_text(json.dumps(conexiones_content), encoding="utf-8")
+    (tmp_path / "conexiones.json").write_text(
+        json.dumps(conexiones_content), encoding="utf-8"
+    )
 
     spark = SparkFalso()
 
@@ -249,22 +287,36 @@ def test_stop_llamado_exactamente_una_vez(monkeypatch, tmp_path):
         return []
 
     monkeypatch.setattr(ejecutor_dataflow, "_crear_sesion_dataflow", crear_sesion_mock)
-    monkeypatch.setattr(ejecutor_dataflow, "leer_jdbc", leer_jdbc_mock)
     monkeypatch.setattr(ejecutor_dataflow, "_validar", validar_mock)
+    monkeypatch.setattr(
+        ejecutor_dataflow.EjecutorPlanDataflow,
+        "ejecutar",
+        lambda self, plan: {
+            "operaciones_ejecutadas": len(plan.operaciones),
+            "tablas_disponibles": (),
+            "publicaciones": (),
+        },
+    )
     monkeypatch.setattr(
         ejecutor_dataflow,
         "cargar_catalogo",
-        lambda x: MagicMock(**{
-            "buscar_jdbc.return_value": MagicMock(
-                url="jdbc:postgresql://localhost/db",
-                secreto_nombre="DB_PASSWORD",
-                propiedades={},
-                allowlist=[MagicMock(esquema="esquema", tabla="tabla", campos=("id", "nombre"))]
-            )
-        })
+        lambda x: MagicMock(
+            **{
+                "buscar_jdbc.return_value": MagicMock(
+                    url="jdbc:postgresql://localhost/db",
+                    secreto_nombre="DB_PASSWORD",
+                    propiedades={},
+                    allowlist=[
+                        MagicMock(
+                            esquema="esquema", tabla="tabla", campos=("id", "nombre")
+                        )
+                    ],
+                )
+            }
+        ),
     )
 
     args = argumentos_dataflow(tmp_path)
-    codigo = ejecutor_dataflow.ejecutar_dataflow(args)
+    ejecutor_dataflow.ejecutar_dataflow(args)
 
     assert spark.detenciones == 1

@@ -1,5 +1,4 @@
 from motor_spark.conexiones.cargador import (
-    CatalogoConexiones,
     CargadorConexiones,
     ResolvedorConexiones,
     cargar_catalogo,
@@ -26,8 +25,8 @@ from motor_spark.conexiones.secretos import (
 __all__ = [
     "AdministradorSecretos",
     "CampoAllowlist",
-    "CatalogoConexiones",
     "CargadorConexiones",
+    "CatalogoConexiones",
     "ConexionJdbc",
     "ConexionLocal",
     "ConexionSftp",

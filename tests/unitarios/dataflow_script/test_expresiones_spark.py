@@ -3,11 +3,7 @@ from __future__ import annotations
 import pytest
 
 from motor_spark.dataflow_script.ast import (
-    Etiqueta,
     Expresion,
-    ProjectionItem,
-    SentenciaLoad,
-    SentenciaSelect,
     TipoExpresion,
 )
 from motor_spark.dataflow_script.expresiones import (
@@ -15,19 +11,15 @@ from motor_spark.dataflow_script.expresiones import (
     ErrorCompilacionExpresion,
 )
 from motor_spark.dataflow_script.jdbc import (
-    ConstructorSubconsulta,
     construir_reader_jdbc,
     construir_select,
 )
-from motor_spark.conexiones.modelos import ConexionJdbc
-
 
 pytestmark = pytest.mark.spark
 
 
 class TestCompiladorExpresionSpark:
     def test_compilar_columna(self, spark_local: pytest.FixtureRequest) -> None:
-        from pyspark.sql import SparkSession
 
         spark = spark_local
         df = spark.createDataFrame([{"id": 1, "nombre": "test"}])
@@ -61,7 +53,9 @@ class TestCompiladorExpresionSpark:
         resultado = df.select(columna.alias("valor")).collect()
         assert resultado[0]["valor"] == "hola"
 
-    def test_compilar_operacion_aritmetica(self, spark_local: pytest.FixtureRequest) -> None:
+    def test_compilar_operacion_aritmetica(
+        self, spark_local: pytest.FixtureRequest
+    ) -> None:
         spark = spark_local
         df = spark.createDataFrame([{"a": 10, "b": 3}])
         compilador = CompiladorExpresion()
@@ -100,7 +94,9 @@ class TestCompiladorExpresionSpark:
 
     def test_compilar_and(self, spark_local: pytest.FixtureRequest) -> None:
         spark = spark_local
-        df = spark.createDataFrame([{"a": 5, "b": 3}, {"a": 5, "b": 5}, {"a": 3, "b": 3}])
+        df = spark.createDataFrame(
+            [{"a": 5, "b": 3}, {"a": 5, "b": 5}, {"a": 3, "b": 3}]
+        )
         compilador = CompiladorExpresion()
 
         expresion = Expresion(
@@ -139,9 +135,7 @@ class TestCompiladorExpresionSpark:
         expresion = Expresion(
             tipo=TipoExpresion.OPERACION_BINARIA,
             valor="NOT",
-            hijos=(
-                Expresion(tipo=TipoExpresion.COLUMNA, valor="a"),
-            ),
+            hijos=(Expresion(tipo=TipoExpresion.COLUMNA, valor="a"),),
         )
         columna = compilador.compilar(expresion)
 
@@ -157,9 +151,7 @@ class TestCompiladorExpresionSpark:
         expresion = Expresion(
             tipo=TipoExpresion.FUNCION,
             valor="TRIM",
-            hijos=(
-                Expresion(tipo=TipoExpresion.COLUMNA, valor="texto"),
-            ),
+            hijos=(Expresion(tipo=TipoExpresion.COLUMNA, valor="texto"),),
         )
         columna = compilador.compilar(expresion)
 
@@ -195,10 +187,12 @@ class TestCompiladorExpresionSpark:
 
     def test_compilar_coalesce(self, spark_local: pytest.FixtureRequest) -> None:
         spark = spark_local
-        df = spark.createDataFrame([
-            {"a": "otro", "b": "valor"},
-            {"a": None, "b": "valor"},
-        ])
+        df = spark.createDataFrame(
+            [
+                {"a": "otro", "b": "valor"},
+                {"a": None, "b": "valor"},
+            ]
+        )
         compilador = CompiladorExpresion()
 
         expresion = Expresion(
@@ -222,9 +216,7 @@ class TestCompiladorExpresionSpark:
         expresion = Expresion(
             tipo=TipoExpresion.FUNCION,
             valor="ISNULL",
-            hijos=(
-                Expresion(tipo=TipoExpresion.COLUMNA, valor="a"),
-            ),
+            hijos=(Expresion(tipo=TipoExpresion.COLUMNA, valor="a"),),
         )
         columna = compilador.compilar(expresion)
 
@@ -240,9 +232,7 @@ class TestCompiladorExpresionSpark:
         expresion = Expresion(
             tipo=TipoExpresion.FUNCION,
             valor="SUM",
-            hijos=(
-                Expresion(tipo=TipoExpresion.COLUMNA, valor="a"),
-            ),
+            hijos=(Expresion(tipo=TipoExpresion.COLUMNA, valor="a"),),
         )
         columna = compilador.compilar(expresion)
 
@@ -257,9 +247,7 @@ class TestCompiladorExpresionSpark:
         expresion = Expresion(
             tipo=TipoExpresion.FUNCION,
             valor="AVG",
-            hijos=(
-                Expresion(tipo=TipoExpresion.COLUMNA, valor="a"),
-            ),
+            hijos=(Expresion(tipo=TipoExpresion.COLUMNA, valor="a"),),
         )
         columna = compilador.compilar(expresion)
 
@@ -284,9 +272,11 @@ class TestCompiladorExpresionSpark:
         resultado = df.select(columna.alias("conteo")).collect()
         assert resultado[0]["conteo"] == 2
 
-    def test_compilar_funcion_desconocida_lanza_error(self, spark_local: pytest.FixtureRequest) -> None:
+    def test_compilar_funcion_desconocida_lanza_error(
+        self, spark_local: pytest.FixtureRequest
+    ) -> None:
         spark = spark_local
-        df = spark.createDataFrame([{"a": 1}])
+        spark.createDataFrame([{"a": 1}])
         compilador = CompiladorExpresion()
 
         expresion = Expresion(
@@ -308,9 +298,7 @@ class TestCompiladorExpresionSpark:
         expresion = Expresion(
             tipo=TipoExpresion.FUNCION,
             valor="NUM",
-            hijos=(
-                Expresion(tipo=TipoExpresion.COLUMNA, valor="a"),
-            ),
+            hijos=(Expresion(tipo=TipoExpresion.COLUMNA, valor="a"),),
         )
         columna = compilador.compilar(expresion)
 
@@ -325,9 +313,7 @@ class TestCompiladorExpresionSpark:
         expresion = Expresion(
             tipo=TipoExpresion.FUNCION,
             valor="MONTH",
-            hijos=(
-                Expresion(tipo=TipoExpresion.COLUMNA, valor="fecha"),
-            ),
+            hijos=(Expresion(tipo=TipoExpresion.COLUMNA, valor="fecha"),),
         )
         columna = compilador.compilar(expresion)
 
@@ -342,9 +328,7 @@ class TestCompiladorExpresionSpark:
         expresion = Expresion(
             tipo=TipoExpresion.FUNCION,
             valor="YEAR",
-            hijos=(
-                Expresion(tipo=TipoExpresion.COLUMNA, valor="fecha"),
-            ),
+            hijos=(Expresion(tipo=TipoExpresion.COLUMNA, valor="fecha"),),
         )
         columna = compilador.compilar(expresion)
 
@@ -353,7 +337,9 @@ class TestCompiladorExpresionSpark:
 
 
 class TestJdbcSpark:
-    def test_construir_select_con_columnas(self, spark_local: pytest.FixtureRequest) -> None:
+    def test_construir_select_con_columnas(
+        self, spark_local: pytest.FixtureRequest
+    ) -> None:
         resultado = construir_select(
             esquema="public",
             tabla="usuarios",

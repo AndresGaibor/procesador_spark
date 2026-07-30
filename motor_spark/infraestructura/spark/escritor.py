@@ -32,9 +32,7 @@ def escribir_datos(
     if numero_particiones:
         cantidad = int(numero_particiones)
         if cantidad < 1:
-            raise ErrorReceta(
-                "numero_particiones debe ser mayor que cero"
-            )
+            raise ErrorReceta("numero_particiones debe ser mayor que cero")
         if columnas_reparticion:
             exigir_columnas(resultado, columnas_reparticion, 0)
             resultado = resultado.repartition(
@@ -53,12 +51,7 @@ def escribir_datos(
     if particionar_por:
         escritor = escritor.partitionBy(*particionar_por)
 
-    emitir(
-        "ESCRITURA_INICIO="
-        f"ruta={ruta} "
-        f"formato={formato} "
-        f"modo={modo_efectivo}"
-    )
+    emitir(f"ESCRITURA_INICIO=ruta={ruta} formato={formato} modo={modo_efectivo}")
     escritor.save(ruta)
     emitir(f"ESCRITURA_FIN=ruta={ruta}")
 

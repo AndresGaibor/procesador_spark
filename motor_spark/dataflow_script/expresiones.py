@@ -4,15 +4,18 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from motor_spark.dataflow_script.ast import Expresion, TipoExpresion
-from motor_spark.dataflow_script.errores import ErrorDataflow, SourceLocation, SourceSpan
+from motor_spark.dataflow_script.errores import (
+    SourceLocation,
+)
 
 if TYPE_CHECKING:
     from pyspark.sql import Column
     from pyspark.sql.functions import Expr as FExpr
 
 try:
-    from pyspark.sql import functions as pyspark_f
     from pyspark.sql import Window as pyspark_Window
+    from pyspark.sql import functions as pyspark_f
+
     HAS_PYSPARK = True
 except ImportError:
     pyspark_f = None  # type: ignore
@@ -20,23 +23,25 @@ except ImportError:
     HAS_PYSPARK = False
 
 
-FUNCIONES_WHITELIST: frozenset[str] = frozenset({
-    "TRIM",
-    "IF",
-    "MATCH",
-    "COALESCE",
-    "ISNULL",
-    "INDEXREGEX",
-    "NUM",
-    "MONTH",
-    "YEAR",
-    "SUM",
-    "AVG",
-    "COUNT",
-    "FALSE",
-    "WINDOW",
-    "WRANK",
-})
+FUNCIONES_WHITELIST: frozenset[str] = frozenset(
+    {
+        "TRIM",
+        "IF",
+        "MATCH",
+        "COALESCE",
+        "ISNULL",
+        "INDEXREGEX",
+        "NUM",
+        "MONTH",
+        "YEAR",
+        "SUM",
+        "AVG",
+        "COUNT",
+        "FALSE",
+        "WINDOW",
+        "WRANK",
+    }
+)
 
 PATRON_REGEX: re.Pattern[str] = re.compile(r"^(?:\^?)(.+)(?:\$?)$", re.IGNORECASE)
 
@@ -73,6 +78,7 @@ class CompiladorExpresion:
     def _importar_F(self) -> FExpr:
         if self._F is None:
             from pyspark.sql.functions import expr as _expr
+
             self._F = _expr
         return self._F
 
@@ -85,7 +91,18 @@ class CompiladorExpresion:
         return pyspark.sql.functions.lit(valor)
 
     def compilar(self, expresion: Expresion) -> Column:
+        """Compila una expresión de valor a ``Column`` de Spark."""
         return self._compilar_expresion(expresion)
+
+    def compilar_predicado(self, expresion: Expresion) -> Column:
+        """Convierte la verdad numérica de Qlik al booleano estricto de Spark.
+
+        Qlik representa True como -1 y False como 0; funciones como Match o
+        IndexRegEx también se usan directamente en WHERE. Spark no permite una
+        columna numérica como filtro, pero su cast boolean conserva 0=False y
+        cualquier valor no cero=True.
+        """
+        return self._compilar_expresion(expresion).cast("boolean")
 
     def _compilar_expresion(self, expr: Expresion) -> Column:
         if expr.tipo == TipoExpresion.COLUMNA:
@@ -176,7 +193,7 @@ class CompiladorExpresion:
                 mensaje="IF requiere 3 argumentos: IF(condicion, valor_true, valor_false)",
                 codigo="EXPR_IF_ARITY",
             )
-        condicion = self._compilar_expresion(expr.hijos[0])
+        condicion = self.compilar_predicado(expr.hijos[0])
         valor_true = self._compilar_expresion(expr.hijos[1])
         valor_false = self._compilar_expresion(expr.hijos[2])
         return pyspark.sql.functions.when(condicion, valor_true).otherwise(valor_false)
@@ -191,9 +208,12 @@ class CompiladorExpresion:
         valor = self._compilar_expresion(expr.hijos[0])
         patrones = [self._compilar_expresion(h) for h in expr.hijos[1:]]
         resultado = pyspark.sql.functions.lit(0)
-        for i, patron in enumerate(patrones, start=1):
+        # Cada when nuevo envuelve al anterior. Recorrer en sentido inverso
+        # deja la primera coincidencia como rama exterior, igual que Qlik.
+        for indice, patron in reversed(list(enumerate(patrones, start=1))):
             resultado = pyspark.sql.functions.when(
-                valor.eqNullSafe(patron), pyspark.sql.functions.lit(i)
+                valor.eqNullSafe(patron),
+                pyspark.sql.functions.lit(indice),
             ).otherwise(resultado)
         return resultado
 
@@ -215,31 +235,41 @@ class CompiladorExpresion:
                 codigo="EXPR_ISNULL_ARITY",
             )
         operando = self._compilar_expresion(expr.hijos[0])
-        return pyspark.sql.functions.when(operando.isNull(), pyspark.sql.functions.lit(-1)).otherwise(
-            pyspark.sql.functions.lit(0)
-        )
+        return pyspark.sql.functions.when(
+            operando.isNull(), pyspark.sql.functions.lit(-1)
+        ).otherwise(pyspark.sql.functions.lit(0))
 
     def _funcion_indexregex(self, expr: Expresion) -> Column:
         pyspark = __import__("pyspark")
-        if len(expr.hijos) < 2:
+        if len(expr.hijos) not in {2, 3}:
             raise ErrorCompilacionExpresion(
-                mensaje="INDEXREGEX requiere 2 argumentos: INDEXREGEX(cadena, patron)",
+                mensaje=(
+                    "INDEXREGEX requiere texto, patrón y opcionalmente "
+                    "número de ocurrencia"
+                ),
                 codigo="EXPR_INDEXREGEX_ARITY",
             )
         cadena = self._compilar_expresion(expr.hijos[0])
-        patron = expr.hijos[1].valor
-        patron_limpio = patron.strip("'\"")
-
-        def buscar_indice(c: Column) -> Column:
-            coincidencia = pyspark.sql.functions.regexp_extract(c, patron_limpio, 0)
-            indice_valido = pyspark.sql.functions.when(
-                coincidencia =="", pyspark.sql.functions.lit(0)
-            ).otherwise(
-                pyspark.sql.functions.lit(1)
+        patron = expr.hijos[1].valor.strip("'\"")
+        ocurrencia = 1
+        if len(expr.hijos) == 3:
+            ocurrencia = self._entero_literal(
+                expr.hijos[2],
+                "ocurrencia de INDEXREGEX",
             )
-            return indice_valido
+            if ocurrencia < 1:
+                raise ErrorCompilacionExpresion(
+                    mensaje="La ocurrencia de INDEXREGEX debe ser mayor que cero",
+                    codigo="EXPR_INDEXREGEX_OCCURRENCE",
+                )
 
-        return buscar_indice(cadena)
+        # regexp_instr devuelve exactamente la posición 1-based y 0 cuando no
+        # existe coincidencia, que es el contrato de Qlik.
+        return pyspark.sql.functions.regexp_instr(
+            cadena,
+            pyspark.sql.functions.lit(patron),
+            ocurrencia,
+        )
 
     def _funcion_num(self, expr: Expresion) -> Column:
         pyspark = __import__("pyspark")
@@ -250,7 +280,9 @@ class CompiladorExpresion:
             operando.isNull(), pyspark.sql.functions.lit(0)
         ).otherwise(
             pyspark.sql.functions.coalesce(
-                pyspark.sql.functions.regexp_replace(operando, r"[^\d.,-]", "").cast("double"),
+                pyspark.sql.functions.regexp_replace(operando, r"[^\d.,-]", "").cast(
+                    "double"
+                ),
                 pyspark.sql.functions.lit(0),
             )
         )
@@ -309,61 +341,129 @@ class CompiladorExpresion:
             return pyspark.sql.functions.countDistinct(columna)
         return pyspark.sql.functions.count(columna)
 
+    @staticmethod
+    def _entero_literal(expr: Expresion, nombre: str) -> int:
+        """Extrae un entero de configuración sin ejecutar una columna Spark."""
+        if expr.tipo != TipoExpresion.LITERAL_NUMERO:
+            raise ErrorCompilacionExpresion(
+                mensaje=f"{nombre} debe ser un literal numérico",
+                codigo="EXPR_INTEGER_LITERAL_REQUIRED",
+            )
+        valor_float = float(expr.valor)
+        if not valor_float.is_integer():
+            raise ErrorCompilacionExpresion(
+                mensaje=f"{nombre} debe ser entero",
+                codigo="EXPR_INTEGER_REQUIRED",
+            )
+        return int(valor_float)
+
     def _compilar_window(self, expr: Expresion) -> Column:
-        pyspark = __import__("pyspark")
         if not expr.hijos:
             raise ErrorCompilacionExpresion(
-                mensaje="WINDOW requiere al menos 1 argumento",
+                mensaje="WINDOW requiere al menos una expresión principal",
                 codigo="EXPR_WINDOW_ARITY",
             )
+        principal = expr.hijos[0]
+        if principal.tipo != TipoExpresion.WINDOW_RANK:
+            raise ErrorCompilacionExpresion(
+                mensaje="Solo WRank está soportado actualmente dentro de Window",
+                codigo="EXPR_WINDOW_MAIN_UNSUPPORTED",
+            )
 
-        if HAS_PYSPARK and pyspark_Window is not None:
-            from pyspark.sql import Window as pyspark_Window
-            from pyspark.sql import functions as F
+        mode = (
+            self._entero_literal(principal.hijos[0], "mode de WRank")
+            if principal.hijos
+            else 0
+        )
+        fmt = (
+            self._entero_literal(principal.hijos[1], "fmt de WRank")
+            if len(principal.hijos) > 1
+            else 0
+        )
+        if mode not in {1, 4}:
+            raise ErrorCompilacionExpresion(
+                mensaje=f"WRank mode={mode} todavía no tiene equivalencia exacta",
+                codigo="EXPR_WRANK_MODE_UNSUPPORTED",
+            )
+        if fmt != 1:
+            raise ErrorCompilacionExpresion(
+                mensaje=f"WRank fmt={fmt} requiere valores duales no soportados",
+                codigo="EXPR_WRANK_FMT_UNSUPPORTED",
+            )
 
-            primer_hijo = expr.hijos[0]
-            if primer_hijo.tipo == TipoExpresion.WINDOW_RANK:
-                partition_cols = []
-                order_cols = []
-                sort_direction = "asc"
-                partition_start = 1
-                if len(expr.hijos) > 1:
-                    for i, hijo in enumerate(expr.hijos[1:]):
-                        if i == 0 and hijo.valor.upper() in ("ASC", "DESC"):
-                            sort_direction = hijo.valor.upper()
-                            continue
-                        col = self._compilar_expresion(hijo)
-                        if i == partition_start:
-                            partition_cols.append(col)
-                        else:
-                            order_cols.append(col)
+        direccion_indice: int | None = None
+        direccion = "ASC"
+        for indice, hijo in enumerate(expr.hijos[1:], start=1):
+            if hijo.tipo != TipoExpresion.LITERAL_STRING:
+                continue
+            candidato = hijo.valor.strip("'\"").upper()
+            if candidato in {"ASC", "DESC"}:
+                direccion_indice = indice
+                direccion = candidato
+                break
+        if direccion_indice is None:
+            raise ErrorCompilacionExpresion(
+                mensaje="Window requiere 'ASC' o 'DESC' antes del campo de orden",
+                codigo="EXPR_WINDOW_SORT_REQUIRED",
+            )
 
-                ventana = pyspark_Window.partitionBy(*partition_cols).orderBy(*order_cols)
-                return F.row_number().over(ventana)
+        particiones_ast = expr.hijos[1:direccion_indice]
+        orden_ast = expr.hijos[direccion_indice + 1 :]
+        if not orden_ast:
+            raise ErrorCompilacionExpresion(
+                mensaje="Window requiere al menos una expresión de orden",
+                codigo="EXPR_WINDOW_ORDER_REQUIRED",
+            )
 
-        return self._lit(0)
+        from pyspark.sql import Window
+        from pyspark.sql import functions as F
+
+        particiones = [self._compilar_expresion(hijo) for hijo in particiones_ast]
+        orden = []
+        for hijo in orden_ast:
+            columna = self._compilar_expresion(hijo)
+            orden.append(columna.desc() if direccion == "DESC" else columna.asc())
+        ventana = Window.partitionBy(*particiones).orderBy(*orden)
+        if mode == 1:
+            return F.rank().over(ventana)
+        return F.row_number().over(ventana)
 
     def _compilar_wrank(self, expr: Expresion) -> Column:
-        pyspark = __import__("pyspark")
-        return self._lit(0)
+        raise ErrorCompilacionExpresion(
+            mensaje="WRank solo puede usarse como expresión principal de Window",
+            codigo="EXPR_WRANK_OUTSIDE_WINDOW",
+        )
 
     def _compilar_operacion_binaria(self, expr: Expresion) -> Column:
         operador = expr.valor.upper()
-        pyspark = __import__("pyspark")
+        __import__("pyspark")
+
+        if operador in {"NOT", "NEGATE"}:
+            if len(expr.hijos) != 1:
+                raise ErrorCompilacionExpresion(
+                    mensaje=f"{operador} requiere exactamente un operando",
+                    codigo="EXPR_UNARY_ARITY",
+                )
+            if operador == "NOT":
+                return ~self.compilar_predicado(expr.hijos[0])
+            operando = self._compilar_expresion(expr.hijos[0])
+            return -operando
+
+        if len(expr.hijos) != 2:
+            raise ErrorCompilacionExpresion(
+                mensaje=f"{operador} requiere exactamente dos operandos",
+                codigo="EXPR_BINARY_ARITY",
+            )
 
         if operador == "AND":
-            izquierda = self._compilar_expresion(expr.hijos[0])
-            derecha = self._compilar_expresion(expr.hijos[1])
+            izquierda = self.compilar_predicado(expr.hijos[0])
+            derecha = self.compilar_predicado(expr.hijos[1])
             return izquierda & derecha
 
         elif operador == "OR":
-            izquierda = self._compilar_expresion(expr.hijos[0])
-            derecha = self._compilar_expresion(expr.hijos[1])
+            izquierda = self.compilar_predicado(expr.hijos[0])
+            derecha = self.compilar_predicado(expr.hijos[1])
             return izquierda | derecha
-
-        elif operador == "NOT":
-            operando = self._compilar_expresion(expr.hijos[0])
-            return ~operando
 
         elif operador in ("=", "<>", "<", ">", "<=", ">="):
             izquierda = self._compilar_expresion(expr.hijos[0])
@@ -406,7 +506,9 @@ class CompiladorExpresion:
             return self._lit("")
         resultado = self._compilar_expresion(expr.hijos[0])
         for hijo in expr.hijos[1:]:
-            resultado = pyspark.sql.functions.concat(resultado, self._compilar_expresion(hijo))
+            resultado = pyspark.sql.functions.concat(
+                resultado, self._compilar_expresion(hijo)
+            )
         return resultado
 
 

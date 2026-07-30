@@ -102,9 +102,7 @@ class TestSentenciasSelectSinSpark:
         contexto.ejecutar_etiqueta(etiqueta)
 
         assert contexto.tiene_errores()
-        assert any(
-            e.codigo == "EXEC_SPARK_NOT_INIT" for e in contexto.errores
-        )
+        assert any(e.codigo == "EXEC_SPARK_NOT_INIT" for e in contexto.errores)
 
 
 class TestSentenciasLoadSinSpark:
@@ -127,9 +125,7 @@ class TestSentenciasLoadSinSpark:
         contexto.ejecutar_etiqueta(etiqueta)
 
         assert contexto.tiene_errores()
-        assert any(
-            e.codigo == "EXEC_SPARK_NOT_INIT" for e in contexto.errores
-        )
+        assert any(e.codigo == "EXEC_SPARK_NOT_INIT" for e in contexto.errores)
 
     def test_ejecutar_load_resident_sin_tabla_reporta_error(self) -> None:
         class FakeSpark:
@@ -154,9 +150,7 @@ class TestSentenciasLoadSinSpark:
         contexto.ejecutar_etiqueta(etiqueta)
 
         assert contexto.tiene_errores()
-        assert any(
-            e.codigo == "EXEC_RESIDENT_NOT_FOUND" for e in contexto.errores
-        )
+        assert any(e.codigo == "EXEC_RESIDENT_NOT_FOUND" for e in contexto.errores)
 
 
 class TestConcatenateSinSpark:
@@ -179,9 +173,7 @@ class TestConcatenateSinSpark:
         contexto._ejecutar_concatenate(sentencia)
 
         assert contexto.tiene_errores()
-        assert any(
-            e.codigo == "EXEC_CONCAT_TARGET_NOT_FOUND" for e in contexto.errores
-        )
+        assert any(e.codigo == "EXEC_CONCAT_TARGET_NOT_FOUND" for e in contexto.errores)
 
     def test_concatenate_origen_no_existe(self) -> None:
         from motor_spark.dataflow_script.ast import SentenciaConcatenate
@@ -202,9 +194,7 @@ class TestConcatenateSinSpark:
         contexto._ejecutar_concatenate(sentencia)
 
         assert contexto.tiene_errores()
-        assert any(
-            e.codigo == "EXEC_CONCAT_SOURCE_NOT_FOUND" for e in contexto.errores
-        )
+        assert any(e.codigo == "EXEC_CONCAT_SOURCE_NOT_FOUND" for e in contexto.errores)
 
 
 class TestWRank:
@@ -212,9 +202,9 @@ class TestWRank:
         pytest.importorskip("pyspark")
         from pyspark.sql import SparkSession
 
-        spark = SparkSession.builder.master("local[1]").appName(
-            "test-wrank"
-        ).getOrCreate()
+        spark = (
+            SparkSession.builder.master("local[1]").appName("test-wrank").getOrCreate()
+        )
         try:
             contexto = ContextoEjecucionDataflow(spark=spark)
             resultado = contexto.w_rank(

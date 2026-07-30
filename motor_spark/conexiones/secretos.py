@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 
 class AdministradorSecretos:
@@ -24,7 +25,24 @@ class AdministradorSecretos:
         return valor
 
     def contiene(self, nombre_env: str) -> bool:
+        """Indica si un secreto está disponible sin revelar su valor."""
         return self.obtener(nombre_env) is not None
+
+    def redactar_texto(self, texto: str) -> str:
+        """Sustituye secretos conocidos antes de escribir errores o trazas.
+
+        Se ordenan por longitud para que un secreto corto contenido dentro de
+        otro no deje visible el resto del valor más largo.
+        """
+        resultado = str(texto)
+        valores = {
+            valor
+            for valor in (*self._inyectados.values(), *self._cache.values())
+            if valor
+        }
+        for valor in sorted(valores, key=len, reverse=True):
+            resultado = resultado.replace(valor, "****")
+        return resultado
 
     def _mask_value(self, valor: str) -> str:
         if len(valor) <= 4:
@@ -47,7 +65,7 @@ class ValidadorSecretos:
 
     def validar_no_exponer(self, datos: dict[str, Any]) -> list[str]:
         secretos_encontrados: list[str] = []
-        for clave, valor in datos.items():
+        for clave in datos:
             if self.PATRON_SENSIBLE.search(clave):
                 secretos_encontrados.append(clave)
         return secretos_encontrados

@@ -1,6 +1,4 @@
-import pytest
-
-from motor_spark.dataflow_script.lexer import Lexer, LexerError, Token, tokenizar
+from motor_spark.dataflow_script.lexer import tokenizar
 
 
 def test_tokenizar_bracket_id():
@@ -25,7 +23,7 @@ def test_tokenizar_bracket_id_con_numero():
 
 
 def test_tokenizar_bracket_id_error_no_cierra():
-    tokens, errores = tokenizar("[tabla sin cerrar\n")
+    _tokens, errores = tokenizar("[tabla sin cerrar\n")
     assert len(errores) > 0
     assert any("BRACKET_UNCLOSED" in e.codigo for e in errores if e.codigo)
 
@@ -100,7 +98,14 @@ def test_tokenizar_store_into():
 
 
 def test_tokenizar_funciones_permitidas():
-    funciones = ["CONCAT(a,b)", "LEFT(c,1)", "UPPER(d)", "LOWER(e)", "TRIM(f)", "IFNULL(g,0)"]
+    funciones = [
+        "CONCAT(a,b)",
+        "LEFT(c,1)",
+        "UPPER(d)",
+        "LOWER(e)",
+        "TRIM(f)",
+        "IFNULL(g,0)",
+    ]
     for func in funciones:
-        tokens, errores = tokenizar(f"SELECT {func} FROM t")
+        _tokens, errores = tokenizar(f"SELECT {func} FROM t")
         assert len(errores) == 0, f"Error tokenizing {func}: {errores}"

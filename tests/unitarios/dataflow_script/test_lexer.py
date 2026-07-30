@@ -1,6 +1,4 @@
-import pytest
-
-from motor_spark.dataflow_script.lexer import Lexer, LexerError, Token, tokenizar
+from motor_spark.dataflow_script.lexer import tokenizar
 
 
 def test_tokenizar_select_simple():
@@ -82,7 +80,7 @@ def test_tokenizar_fin_archivo():
 
 
 def test_tokenizar_error_caracter_desconocido():
-    tokens, errores = tokenizar("SELECT @ FROM tabla")
+    _tokens, errores = tokenizar("SELECT @ FROM tabla")
     assert len(errores) > 0
 
 
@@ -101,5 +99,5 @@ def test_tokenizar_espacios():
 
 def test_tokenizar_multilinea():
     contenido = "SELECT *\nFROM tabla\nWHERE x = 1;"
-    tokens, errores = tokenizar(contenido)
+    _tokens, errores = tokenizar(contenido)
     assert len(errores) == 0

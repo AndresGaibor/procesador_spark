@@ -1,12 +1,8 @@
-import pytest
-
 from motor_spark.dataflow_script.ast import (
     ProgramaDataflowScript,
     SentenciaLibConnectTo,
-    SentenciaLoad,
     SentenciaSelect,
     SentenciaSet,
-    TipoExpresion,
 )
 from motor_spark.dataflow_script.lexer import tokenizar
 from motor_spark.dataflow_script.parser import parsear
@@ -80,7 +76,9 @@ def test_parsear_select_con_where():
 
 
 def test_parsear_select_con_left_join():
-    tokens, _ = tokenizar("SELECT * FROM esquema.tabla1 LEFT JOIN esquema.tabla2 ON tabla1.id = tabla2.id;")
+    tokens, _ = tokenizar(
+        "SELECT * FROM esquema.tabla1 LEFT JOIN esquema.tabla2 ON tabla1.id = tabla2.id;"
+    )
     programa, errores = parsear(tokens)
     assert len(errores) == 0
     etiqueta = programa.etiquetas[0]
@@ -91,24 +89,26 @@ def test_parsear_select_con_left_join():
 
 def test_parsear_expresion_aditiva():
     tokens, _ = tokenizar("SELECT col1 + col2 FROM esquema.tabla;")
-    programa, errores = parsear(tokens)
+    _programa, errores = parsear(tokens)
     assert len(errores) == 0
 
 
 def test_parsear_expresion_logica():
     tokens, _ = tokenizar("SELECT * FROM esquema.tabla WHERE col1 = 1 AND col2 = 2;")
-    programa, errores = parsear(tokens)
+    _programa, errores = parsear(tokens)
     assert len(errores) == 0
 
 
 def test_parsear_funcion_concat():
     tokens, _ = tokenizar("SELECT CONCAT(col1, col2) FROM esquema.tabla;")
-    programa, errores = parsear(tokens)
+    _programa, errores = parsear(tokens)
     assert len(errores) == 0
 
 
 def test_parsear_multiple_sentencias_etiqueta():
-    tokens, _ = tokenizar("etiq: SELECT 1 FROM esquema.tabla; SELECT 2 FROM esquema.tabla2;")
+    tokens, _ = tokenizar(
+        "etiq: SELECT 1 FROM esquema.tabla; SELECT 2 FROM esquema.tabla2;"
+    )
     programa, errores = parsear(tokens)
     assert len(errores) == 0
     assert len(programa.etiquetas) == 1
@@ -116,7 +116,9 @@ def test_parsear_multiple_sentencias_etiqueta():
 
 
 def test_parsear_varias_etiquetas():
-    tokens, _ = tokenizar("etiq1: SELECT 1 FROM esquema.tabla1; etiq2: SELECT 2 FROM esquema.tabla2;")
+    tokens, _ = tokenizar(
+        "etiq1: SELECT 1 FROM esquema.tabla1; etiq2: SELECT 2 FROM esquema.tabla2;"
+    )
     programa, errores = parsear(tokens)
     assert len(errores) == 0
     assert len(programa.etiquetas) == 2
@@ -132,7 +134,7 @@ def test_parsear_sentencias_globales_y_etiquetas():
 
 def test_programa_dataflow_script_vacio():
     tokens, _ = tokenizar("")
-    programa, errores = parsear(tokens)
+    programa, _errores = parsear(tokens)
     assert isinstance(programa, ProgramaDataflowScript)
     assert len(programa.sentencias_globales) == 0
     assert len(programa.etiquetas) == 0
