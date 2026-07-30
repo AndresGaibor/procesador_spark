@@ -444,6 +444,25 @@ def ejecutar_dataflow(argumentos: ArgumentosDataflowScript) -> int:
             )
             return 1
 
+        # Un programa con solo SET/comentarios puede ser válido para el parser,
+        # pero no contiene trabajo de datos. Rechazarlo aquí evita reportar como
+        # COMPLETADO un script truncado durante el transporte por shell/Talend.
+        if not plan.operaciones:
+            resultado_vacio = _construir_resultado_error_dataflow(
+                argumentos,
+                [
+                    _error(
+                        "El script no generó operaciones ejecutables; "
+                        "revise que el contenido Qlik esté completo y no se haya "
+                        "dividido o truncado al enviarlo como parámetro",
+                        "DFS_EMPTY_PLAN",
+                    )
+                ],
+            )
+            resultado_vacio.update(_metadatos_script(argumentos, contenido))
+            _guardar_y_emitir(argumentos, resultado_vacio, error=True)
+            return 1
+
         hash_plan = _serializar_hash(plan)
         if argumentos.solo_compilar:
             if not argumentos.plan_salida:

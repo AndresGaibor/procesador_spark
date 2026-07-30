@@ -62,6 +62,41 @@ def test_script_invalido_no_crea_spark(monkeypatch, tmp_path, capsys):
     assert "errores" in resultado
 
 
+def test_plan_sin_operaciones_falla_antes_de_crear_spark(monkeypatch, tmp_path):
+    # Un script compuesto solo por SET es sintácticamente válido, pero no
+    # representa trabajo ejecutable. Aceptarlo como COMPLETADO ocultaría
+    # scripts truncados o dañados durante el transporte desde Talend/Fish.
+    (tmp_path / "script.df").write_text(
+        "SET ThousandSep=',';",
+        encoding="utf-8",
+    )
+    (tmp_path / "conexiones.json").write_text("{}", encoding="utf-8")
+
+    spark_creado = False
+
+    def crear_sesion_mock(*args, **kwargs):
+        nonlocal spark_creado
+        spark_creado = True
+        raise AssertionError("Un plan vacío no debe crear Spark")
+
+    monkeypatch.setattr(
+        ejecutor_dataflow,
+        "_crear_sesion_dataflow",
+        crear_sesion_mock,
+    )
+
+    codigo = ejecutor_dataflow.ejecutar_dataflow(argumentos_dataflow(tmp_path))
+
+    assert codigo == 1
+    assert spark_creado is False
+    resultado = json.loads((tmp_path / "resultado.json").read_text())
+    assert resultado["estado"] == "ERROR"
+    assert any(
+        error.get("codigo") == "DFS_EMPTY_PLAN"
+        for error in resultado.get("errores", [])
+    )
+
+
 def test_solo_compilar_no_crea_spark_ni_conexiones(monkeypatch, tmp_path):
     (tmp_path / "script.df").write_text("LOAD id FROM 'ruta.csv';", encoding="utf-8")
     (tmp_path / "conexiones.json").write_text("{}", encoding="utf-8")

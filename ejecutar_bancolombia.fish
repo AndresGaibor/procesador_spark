@@ -50,9 +50,16 @@ end
 # a motor.py como un solo argumento.
 # ============================================================
 
-set -l SCRIPT_QLIK (pbpaste | string collect)
+# ``string collect -N`` conserva el portapapeles completo como un único
+# elemento de Fish, incluidos saltos de línea y el salto final. Sin esta
+# protección, una sustitución de comandos puede convertir cada línea del
+# Qlik en un argumento separado y corromper silenciosamente el script.
+set -l SCRIPT_QLIK (pbpaste | string collect -N)
 
-if test -z (string trim -- "$SCRIPT_QLIK")
+# Se usa ``string match --quiet`` porque ``test -z (string trim ...)`` vuelve
+# a expandir la salida multilínea como muchos argumentos. Solo necesitamos
+# comprobar que exista al menos un carácter no blanco.
+if not string match --quiet --regex '\S' -- "$SCRIPT_QLIK"
     echo "ERROR: El portapapeles está vacío." >&2
     echo "Copia primero el script Qlik completo." >&2
     exit 1
@@ -74,11 +81,15 @@ end
 # Esta sustitución se hace únicamente en memoria.
 # ============================================================
 
+# ``string replace`` escribe el resultado por stdout. El ``string collect``
+# final vuelve a empaquetarlo como un solo valor para que las 954 líneas no
+# se conviertan en una lista de Fish.
 set SCRIPT_QLIK (
     string replace -a \
         'lib://Bancolombia prueba:SFTP//upload/' \
         'lib://Bancolombia prueba:SFTP/' \
-        -- "$SCRIPT_QLIK"
+        -- "$SCRIPT_QLIK" \
+        | string collect -N
 )
 
 
