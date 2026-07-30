@@ -12,6 +12,101 @@ from motor_spark.conexiones.modelos import (
     ConexionSftp,
 )
 
+LIMITE_TAMANIO_CATALOGO = 10 * 1024 * 1024
+
+
+def _decodificar_catalogo(contenido: str) -> dict[str, Any]:
+    """Decodifica el catálogo sin escribir archivos ni conservar el JSON crudo.
+
+    El límite se mide en bytes UTF-8 porque ese es el volumen real recibido por
+    el proceso. La raíz debe ser un objeto para evitar interpretaciones
+    ambiguas de listas o valores escalares.
+    """
+    if not isinstance(contenido, str):
+        raise TypeError("El contenido de conexiones debe ser texto")
+    if not contenido.strip():
+        raise ValueError("El contenido de conexiones está vacío")
+    if len(contenido.encode("utf-8")) > LIMITE_TAMANIO_CATALOGO:
+        raise ValueError(
+            f"El catálogo de conexiones excede {LIMITE_TAMANIO_CATALOGO} bytes"
+        )
+
+    datos = json.loads(contenido)
+    if not isinstance(datos, dict):
+        raise TypeError("El catálogo de conexiones debe ser un objeto JSON")
+    return datos
+
+
+def _construir_catalogo(datos: dict[str, Any]) -> CatalogoConexiones:
+    """Construye el modelo usado por archivo e inline con idéntica semántica."""
+    jdbc = []
+    for j in datos.get("jdbc", []):
+        jdbc.append(
+            ConexionJdbc(
+                tipo=j.get("tipo", "jdbc"),
+                nombre=j["nombre"],
+                url=j["url"],
+                driver=j["driver"],
+                secreto_nombre=j["secreto_nombre"],
+                allowlist=tuple(
+                    CampoAllowlist(
+                        esquema=a["esquema"],
+                        tabla=a["tabla"],
+                        campos=tuple(a.get("campos", [])),
+                    )
+                    for a in j.get("allowlist", [])
+                ),
+                propiedades=j.get("propiedades", {}),
+            )
+        )
+
+    locales = []
+    for l in datos.get("locales", []):
+        locales.append(
+            ConexionLocal(
+                tipo=l.get("tipo", "local"),
+                nombre=l["nombre"],
+                ruta_base=l["ruta_base"],
+                allowlist=tuple(
+                    CampoAllowlist(
+                        esquema=a.get("esquema", ""),
+                        tabla=a["tabla"],
+                        campos=tuple(a.get("campos", [])),
+                    )
+                    for a in l.get("allowlist", [])
+                ),
+            )
+        )
+
+    sftp = []
+    for s in datos.get("sftp", []):
+        sftp.append(
+            ConexionSftp(
+                tipo=s.get("tipo", "sftp"),
+                nombre=s["nombre"],
+                host=s["host"],
+                puerto=s.get("puerto", 22),
+                secreto_nombre=s["secreto_nombre"],
+                ruta_base=s.get("ruta_base", "/"),
+                allowlist=tuple(
+                    CampoAllowlist(
+                        esquema=a.get("esquema", ""),
+                        tabla=a["tabla"],
+                        campos=tuple(a.get("campos", [])),
+                    )
+                    for a in s.get("allowlist", [])
+                ),
+            )
+        )
+
+    return CatalogoConexiones(
+        version=datos.get("version", 1),
+        descripcion=datos.get("descripcion", ""),
+        jdbc=tuple(jdbc),
+        locales=tuple(locales),
+        sftp=tuple(sftp),
+    )
+
 
 class CargadorConexiones:
     def __init__(self, ruta_catalogo: str | Path) -> None:
@@ -22,81 +117,16 @@ class CargadorConexiones:
             raise FileNotFoundError(
                 f"Catalogo de conexiones no encontrado: {self._ruta}"
             )
-
-        contenido = self._ruta.read_text(encoding="utf-8")
-        datos = json.loads(contenido)
-
-        jdbc = []
-        for j in datos.get("jdbc", []):
-            jdbc.append(
-                ConexionJdbc(
-                    tipo=j.get("tipo", "jdbc"),
-                    nombre=j["nombre"],
-                    url=j["url"],
-                    driver=j["driver"],
-                    secreto_nombre=j["secreto_nombre"],
-                    allowlist=tuple(
-                        CampoAllowlist(
-                            esquema=a["esquema"],
-                            tabla=a["tabla"],
-                            campos=tuple(a.get("campos", [])),
-                        )
-                        for a in j.get("allowlist", [])
-                    ),
-                    propiedades=j.get("propiedades", {}),
-                )
-            )
-
-        locales = []
-        for l in datos.get("locales", []):
-            locales.append(
-                ConexionLocal(
-                    tipo=l.get("tipo", "local"),
-                    nombre=l["nombre"],
-                    ruta_base=l["ruta_base"],
-                    allowlist=tuple(
-                        CampoAllowlist(
-                            esquema=a.get("esquema", ""),
-                            tabla=a["tabla"],
-                            campos=tuple(a.get("campos", [])),
-                        )
-                        for a in l.get("allowlist", [])
-                    ),
-                )
-            )
-
-        sftp = []
-        for s in datos.get("sftp", []):
-            sftp.append(
-                ConexionSftp(
-                    tipo=s.get("tipo", "sftp"),
-                    nombre=s["nombre"],
-                    host=s["host"],
-                    puerto=s.get("puerto", 22),
-                    secreto_nombre=s["secreto_nombre"],
-                    ruta_base=s.get("ruta_base", "/"),
-                    allowlist=tuple(
-                        CampoAllowlist(
-                            esquema=a.get("esquema", ""),
-                            tabla=a["tabla"],
-                            campos=tuple(a.get("campos", [])),
-                        )
-                        for a in s.get("allowlist", [])
-                    ),
-                )
-            )
-
-        return CatalogoConexiones(
-            version=datos.get("version", 1),
-            descripcion=datos.get("descripcion", ""),
-            jdbc=tuple(jdbc),
-            locales=tuple(locales),
-            sftp=tuple(sftp),
-        )
+        return cargar_catalogo_contenido(self._ruta.read_text(encoding="utf-8"))
 
 
 def cargar_catalogo(ruta: str | Path) -> CatalogoConexiones:
     return CargadorConexiones(ruta).cargar()
+
+
+def cargar_catalogo_contenido(contenido: str) -> CatalogoConexiones:
+    """Carga un catálogo recibido como argumento sin persistirlo en disco."""
+    return _construir_catalogo(_decodificar_catalogo(contenido))
 
 
 class ResolvedorConexiones:

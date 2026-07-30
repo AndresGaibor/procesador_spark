@@ -2,6 +2,7 @@ from motor_spark.conexiones.cargador import (
     CargadorConexiones,
     ResolvedorConexiones,
     cargar_catalogo,
+    cargar_catalogo_contenido,
     crear_resolvedor,
 )
 from motor_spark.conexiones.modelos import (
@@ -37,5 +38,6 @@ __all__ = [
     "ValidadorSecretos",
     "admin_secretos",
     "cargar_catalogo",
+    "cargar_catalogo_contenido",
     "crear_resolvedor",
 ]

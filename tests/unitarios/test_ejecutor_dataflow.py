@@ -410,3 +410,144 @@ def test_error_de_parser_no_expone_contenido_directo(tmp_path):
     # El error puede mencionar el identificador puntual que falló, pero nunca
     # debe repetir el texto completo enviado por el parámetro.
     assert script not in payload_texto
+
+
+def test_cargar_catalogo_argumentos_usa_json_inline(monkeypatch):
+    contenido = '{"version":1,"jdbc":[],"locales":[],"sftp":[]}'
+    esperado = MagicMock()
+    llamadas = []
+
+    monkeypatch.setattr(
+        ejecutor_dataflow,
+        "cargar_catalogo_contenido",
+        lambda valor: llamadas.append(("contenido", valor)) or esperado,
+    )
+    monkeypatch.setattr(
+        ejecutor_dataflow,
+        "cargar_catalogo",
+        lambda valor: llamadas.append(("archivo", valor)) or MagicMock(),
+    )
+    argumentos = ArgumentosDataflowScript(
+        conexiones=None,
+        conexiones_contenido=contenido,
+        ejecucion_id="inline-conexiones-1",
+        dataflow_script_contenido="LOAD id FROM 'ventas.csv';",
+    )
+
+    catalogo = ejecutor_dataflow._cargar_catalogo_argumentos(argumentos)
+
+    assert catalogo is esperado
+    assert llamadas == [("contenido", contenido)]
+
+
+def test_cargar_catalogo_argumentos_rechaza_dos_origenes():
+    argumentos = ArgumentosDataflowScript(
+        conexiones="/tmp/conexiones.json",
+        conexiones_contenido="{}",
+        ejecucion_id="conflicto-conexiones-1",
+        dataflow_script_contenido="LOAD id FROM 'ventas.csv';",
+    )
+
+    try:
+        ejecutor_dataflow._cargar_catalogo_argumentos(argumentos)
+    except ValueError as error:
+        assert "simultáneamente" in str(error)
+    else:
+        raise AssertionError("Se esperaba rechazo de dos orígenes de conexiones")
+
+
+def test_ejecucion_inline_sin_archivos_json(monkeypatch, capsys):
+    script = "[Ventas]: LOAD id FROM 'lib://Landing/ventas.csv';"
+    conexiones = json.dumps(
+        {
+            "version": 1,
+            "jdbc": [],
+            "locales": [
+                {
+                    "nombre": "Landing",
+                    "ruta_base": "/srv/landing",
+                    "allowlist": [{"esquema": "", "tabla": "ventas.csv", "campos": []}],
+                }
+            ],
+            "sftp": [],
+        }
+    )
+    spark = SparkFalso()
+
+    class EjecutorFalso:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def ejecutar(self, plan):
+            return {
+                "operaciones_ejecutadas": len(plan.operaciones),
+                "tablas_disponibles": (),
+                "publicaciones": (),
+            }
+
+    monkeypatch.setattr(ejecutor_dataflow, "_crear_sesion_dataflow", lambda *a: spark)
+    monkeypatch.setattr(ejecutor_dataflow, "EjecutorPlanDataflow", EjecutorFalso)
+
+    argumentos = ArgumentosDataflowScript(
+        conexiones=None,
+        conexiones_contenido=conexiones,
+        ejecucion_id="todo-inline-1",
+        dataflow_script_contenido=script,
+        resultado=None,
+    )
+    codigo = ejecutor_dataflow.ejecutar_dataflow(argumentos)
+
+    salida = capsys.readouterr().out
+    assert codigo == 0
+    assert "RESULTADO_MOTOR=" in salida
+    assert '"estado":"COMPLETADO"' in salida
+    assert conexiones not in salida
+    assert script not in salida
+    assert spark.detenciones == 1
+
+
+def test_cargar_catalogo_argumentos_rechaza_ausencia_programatica():
+    argumentos = ArgumentosDataflowScript(
+        conexiones=None,
+        conexiones_contenido=None,
+        ejecucion_id="sin-conexiones-1",
+        dataflow_script_contenido="LOAD id FROM 'ventas.csv';",
+    )
+
+    try:
+        ejecutor_dataflow._cargar_catalogo_argumentos(argumentos)
+    except ValueError as error:
+        assert "No se recibió" in str(error)
+    else:
+        raise AssertionError("Se esperaba rechazo por catálogo ausente")
+
+
+def test_catalogo_inline_invalido_no_crea_spark_ni_expone_contenido(
+    monkeypatch, capsys
+):
+    catalogo_invalido = '{"jdbc":[MARCADOR_SUPER_SECRETO]}'
+    spark_creado = False
+
+    def crear_sesion(*args):
+        nonlocal spark_creado
+        spark_creado = True
+        return SparkFalso()
+
+    monkeypatch.setattr(ejecutor_dataflow, "_crear_sesion_dataflow", crear_sesion)
+    argumentos = ArgumentosDataflowScript(
+        conexiones=None,
+        conexiones_contenido=catalogo_invalido,
+        ejecucion_id="catalogo-invalido-1",
+        dataflow_script_contenido="[Ventas]: LOAD id FROM 'ventas.csv';",
+        resultado=None,
+    )
+
+    codigo = ejecutor_dataflow.ejecutar_dataflow(argumentos)
+
+    salida = capsys.readouterr()
+    combinado = salida.out + salida.err
+    assert codigo == 1
+    assert spark_creado is False
+    assert catalogo_invalido not in combinado
+    assert "MARCADOR_SUPER_SECRETO" not in combinado
+    assert "RESULTADO_MOTOR=" in combinado

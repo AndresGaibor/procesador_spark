@@ -203,3 +203,64 @@ def test_dataflow_script_contenido_rechaza_vacio():
                 "e-1",
             ]
         )
+
+
+def test_conexiones_contenido_acepta_json_inline_sin_archivo():
+    catalogo = '{"version":1,"jdbc":[],"locales":[],"sftp":[]}'
+    resultado = analizar_argumentos(
+        [
+            "--dataflow-script-contenido",
+            "LOAD id FROM 'ventas.csv';",
+            "--conexiones-contenido",
+            catalogo,
+            "--ejecucion-id",
+            "inline-1",
+        ]
+    )
+
+    assert isinstance(resultado, ArgumentosDataflowScript)
+    assert resultado.conexiones is None
+    assert resultado.conexiones_contenido == catalogo
+    assert resultado.resultado is None
+
+
+def test_conexiones_rechaza_ruta_y_contenido_simultaneos():
+    with pytest.raises(SystemExit):
+        analizar_argumentos(
+            [
+                "--dataflow-script-contenido",
+                "LOAD id FROM 'ventas.csv';",
+                "--conexiones",
+                "/tmp/conexiones.json",
+                "--conexiones-contenido",
+                "{}",
+                "--ejecucion-id",
+                "inline-1",
+            ]
+        )
+
+
+def test_conexiones_requiere_ruta_o_contenido():
+    with pytest.raises(SystemExit):
+        analizar_argumentos(
+            [
+                "--dataflow-script-contenido",
+                "LOAD id FROM 'ventas.csv';",
+                "--ejecucion-id",
+                "inline-1",
+            ]
+        )
+
+
+def test_conexiones_contenido_rechaza_texto_vacio():
+    with pytest.raises(SystemExit):
+        analizar_argumentos(
+            [
+                "--dataflow-script-contenido",
+                "LOAD id FROM 'ventas.csv';",
+                "--conexiones-contenido",
+                "   ",
+                "--ejecucion-id",
+                "inline-1",
+            ]
+        )

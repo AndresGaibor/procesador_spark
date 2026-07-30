@@ -77,6 +77,23 @@ java.util.List<String> comando = java.util.Arrays.asList(
 
 No se recomienda incluir el script en una línea como `python motor.py ...` armada por concatenación, porque comillas, signos `$`, saltos de línea y caracteres propios de Qlik podrían ser reinterpretados por el shell.
 
+## Ejecutar sin archivos JSON
+
+El catálogo también puede enviarse completo como un único argumento mediante `--conexiones-contenido`. De esta forma no se necesita guardar ni el script, ni el catálogo, ni el resultado:
+
+```bash
+python motor.py \
+  --dataflow-script-contenido "$SCRIPT_QLIK" \
+  --conexiones-contenido "$CONEXIONES_JSON" \
+  --secreto "POSTGRES_BANCOLOMBIA=usuario:clave" \
+  --secreto "SFTP_BANCOLOMBIA=usuario:clave" \
+  --ejecucion-id bancolombia-inline-001
+```
+
+`--conexiones` y `--conexiones-contenido` son mutuamente excluyentes. Al omitir `--resultado`, el contrato se entrega únicamente por consola mediante `RESULTADO_MOTOR={...}`. El catálogo inline no se incorpora a ese resultado ni a los logs.
+
+En Java/Talend, tanto el script como el catálogo deben enviarse como elementos independientes de `ProcessBuilder`; no deben interpolarse dentro de una cadena de shell. Las credenciales son más seguras como variables de entorno del proceso que como argumentos visibles en la lista de procesos.
+
 ## Catálogo de conexiones
 
 El script solo referencia nombres lógicos de `LIB CONNECT TO` y `lib://`. Las URLs, rutas base y allowlists se declaran fuera del script:

@@ -18,10 +18,11 @@ class ArgumentosEjecucion:
 
 @dataclass(frozen=True, slots=True)
 class ArgumentosDataflowScript:
-    conexiones: str
+    conexiones: str | None
     ejecucion_id: str
     dataflow_script: str | None = None
     dataflow_script_contenido: str | None = None
+    conexiones_contenido: str | None = None
     resultado: str | None = None
     solo_compilar: bool = False
     plan_salida: str | None = None
@@ -31,6 +32,11 @@ class ArgumentosDataflowScript:
     def origen_script(self) -> str:
         """Indica si el script provino de un archivo o del propio parámetro CLI."""
         return "parametro" if self.dataflow_script_contenido is not None else "archivo"
+
+    @property
+    def origen_conexiones(self) -> str:
+        """Identifica el origen del catálogo sin exponer su contenido."""
+        return "parametro" if self.conexiones_contenido is not None else "archivo"
 
 
 def crear_argumentos() -> argparse.ArgumentParser:
@@ -108,7 +114,19 @@ def _crear_parser_dataflow_script() -> argparse.ArgumentParser:
         ),
     )
 
-    parser.add_argument("--conexiones", required=False)
+    grupo_conexiones = parser.add_mutually_exclusive_group(required=True)
+    grupo_conexiones.add_argument(
+        "--conexiones",
+        help="Ruta al catálogo JSON de conexiones",
+    )
+    grupo_conexiones.add_argument(
+        "--conexiones-contenido",
+        dest="conexiones_contenido",
+        help=(
+            "Catálogo JSON completo enviado directamente. "
+            "Es mutuamente excluyente con --conexiones."
+        ),
+    )
     parser.add_argument("--ejecucion-id", required=False)
     parser.add_argument("--resultado", default=None)
     parser.add_argument(
@@ -176,8 +194,11 @@ def analizar_argumentos(
             "--entrada, --salida y --esquema no son validos en modo dataflow-script"
         )
 
-    if not valores_df.conexiones:
-        parser_dataflow.error("--conexiones es requerido en modo dataflow-script")
+    if (
+        valores_df.conexiones_contenido is not None
+        and not valores_df.conexiones_contenido.strip()
+    ):
+        parser_dataflow.error("--conexiones-contenido no puede estar vacío")
 
     if not valores_df.ejecucion_id:
         parser_dataflow.error("--ejecucion-id es requerido en modo dataflow-script")
@@ -203,6 +224,7 @@ def analizar_argumentos(
         dataflow_script=valores_df.dataflow_script,
         dataflow_script_contenido=valores_df.dataflow_script_contenido,
         conexiones=valores_df.conexiones,
+        conexiones_contenido=valores_df.conexiones_contenido,
         ejecucion_id=valores_df.ejecucion_id,
         resultado=valores_df.resultado,
         solo_compilar=valores_df.solo_compilar,

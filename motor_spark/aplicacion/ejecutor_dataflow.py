@@ -15,7 +15,10 @@ from pathlib import Path
 from typing import Any
 
 from motor_spark.compartido.eventos_consola import emitir
-from motor_spark.conexiones.cargador import cargar_catalogo
+from motor_spark.conexiones.cargador import (
+    cargar_catalogo,
+    cargar_catalogo_contenido,
+)
 from motor_spark.conexiones.modelos import CatalogoConexiones
 from motor_spark.conexiones.secretos import AdministradorSecretos
 from motor_spark.configuracion.argumentos import ArgumentosDataflowScript
@@ -146,6 +149,25 @@ def _metadatos_script(
             else None
         ),
     }
+
+
+def _cargar_catalogo_argumentos(
+    argumentos: ArgumentosDataflowScript,
+) -> CatalogoConexiones:
+    """Resuelve exactamente un origen del catálogo sin persistir JSON inline.
+
+    La comprobación también protege llamadas programáticas que construyan el
+    dataclass directamente y, por tanto, no atraviesen la exclusión de argparse.
+    """
+    if argumentos.conexiones and argumentos.conexiones_contenido is not None:
+        raise ValueError(
+            "No se puede enviar ruta y contenido de conexiones simultáneamente"
+        )
+    if argumentos.conexiones_contenido is not None:
+        return cargar_catalogo_contenido(argumentos.conexiones_contenido)
+    if argumentos.conexiones:
+        return cargar_catalogo(argumentos.conexiones)
+    raise ValueError("No se recibió --conexiones ni --conexiones-contenido")
 
 
 def _normalizar_script(contenido: str) -> tuple[str, list[ErrorDataflow]]:
@@ -453,7 +475,7 @@ def ejecutar_dataflow(argumentos: ArgumentosDataflowScript) -> int:
 
         # El catálogo se carga después de compilar: un script inválido nunca
         # provoca lecturas de configuración ni creación de recursos externos.
-        catalogo = cargar_catalogo(argumentos.conexiones)
+        catalogo = _cargar_catalogo_argumentos(argumentos)
         nombre_aplicacion = (
             Path(argumentos.dataflow_script).stem
             if argumentos.dataflow_script
