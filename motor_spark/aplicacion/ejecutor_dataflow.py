@@ -8,6 +8,7 @@ delega a ``EjecutorPlanDataflow`` para evitar dos implementaciones divergentes.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import traceback
 from pathlib import Path
@@ -50,8 +51,44 @@ def _error(
     )
 
 
-def _leer_script(ruta: str) -> tuple[str, list[ErrorDataflow]]:
-    """Lee UTF-8 con límite de tamaño antes de reservar memoria excesiva."""
+def _leer_script(
+    argumentos: ArgumentosDataflowScript,
+) -> tuple[str, list[ErrorDataflow]]:
+    """Resuelve el único origen permitido y aplica el mismo límite en bytes.
+
+    El límite se calcula sobre UTF-8, no sobre caracteres, porque ese es el volumen
+    real que terminaría en memoria, logs o transporte entre Talend y el proceso.
+    """
+    if argumentos.dataflow_script and argumentos.dataflow_script_contenido is not None:
+        return "", [
+            _error(
+                "No se puede enviar ruta y contenido de script simultáneamente",
+                "DFS_SCRIPT_SOURCE_CONFLICT",
+            )
+        ]
+
+    if argumentos.dataflow_script_contenido is not None:
+        contenido = argumentos.dataflow_script_contenido
+        contenido_bytes = contenido.encode("utf-8")
+        if not contenido.strip():
+            return "", [
+                _error("El contenido del script está vacío", "DFS_SCRIPT_EMPTY")
+            ]
+        if len(contenido_bytes) > LIMITE_TAMANIO_ARCHIVO:
+            return "", [
+                _error(
+                    f"Script excede limite de tamanio: {LIMITE_TAMANIO_ARCHIVO} bytes",
+                    "DFS_FILE_TOO_LARGE",
+                )
+            ]
+        return contenido, []
+
+    ruta = argumentos.dataflow_script
+    if not ruta:
+        return "", [
+            _error("No se recibió un origen de script", "DFS_SCRIPT_SOURCE_MISSING")
+        ]
+
     archivo = Path(ruta)
     try:
         if not archivo.is_file():
@@ -78,7 +115,7 @@ def _leer_script(ruta: str) -> tuple[str, list[ErrorDataflow]]:
             )
         ]
     try:
-        return contenido_bytes.decode("utf-8"), []
+        contenido = contenido_bytes.decode("utf-8")
     except UnicodeDecodeError as excepcion:
         return "", [
             _error(
@@ -86,6 +123,29 @@ def _leer_script(ruta: str) -> tuple[str, list[ErrorDataflow]]:
                 "DFS_ENCODING_INVALID",
             )
         ]
+    if not contenido.strip():
+        return "", [_error("El contenido del script está vacío", "DFS_SCRIPT_EMPTY")]
+    return contenido, []
+
+
+def _metadatos_script(
+    argumentos: ArgumentosDataflowScript,
+    contenido: str | None = None,
+) -> dict[str, str | None]:
+    """Devuelve identidad auditable sin incluir el script ni consultas sensibles."""
+    return {
+        "origen_script": argumentos.origen_script,
+        "referencia_script": (
+            argumentos.dataflow_script
+            if argumentos.origen_script == "archivo"
+            else None
+        ),
+        "hash_script": (
+            hashlib.sha256(contenido.encode("utf-8")).hexdigest()
+            if contenido is not None
+            else None
+        ),
+    }
 
 
 def _normalizar_script(contenido: str) -> tuple[str, list[ErrorDataflow]]:
@@ -183,7 +243,10 @@ def _construir_resultado_error_dataflow(
     return {
         "estado": "ERROR",
         "ejecucion_id": argumentos.ejecucion_id,
-        "dataflow_script": argumentos.dataflow_script,
+        **_metadatos_script(
+            argumentos,
+            argumentos.dataflow_script_contenido,
+        ),
         "errores": [
             {
                 "mensaje": error.mensaje,
@@ -205,7 +268,10 @@ def _construir_resultado_compilado(
     return {
         "estado": "COMPILADO",
         "ejecucion_id": argumentos.ejecucion_id,
-        "dataflow_script": argumentos.dataflow_script,
+        **_metadatos_script(
+            argumentos,
+            argumentos.dataflow_script_contenido,
+        ),
         "hash": hash_plan,
         "operaciones": [
             operacion.model_dump(mode="json") for operacion in plan.operaciones
@@ -292,13 +358,11 @@ def ejecutar_dataflow(argumentos: ArgumentosDataflowScript) -> int:
     secretos = AdministradorSecretos(dict(argumentos.secretos))
 
     try:
-        contenido, errores = _leer_script(argumentos.dataflow_script)
+        contenido, errores = _leer_script(argumentos)
         if errores:
-            _guardar_y_emitir(
-                argumentos,
-                _construir_resultado_error_dataflow(argumentos, errores),
-                error=True,
-            )
+            resultado_error = _construir_resultado_error_dataflow(argumentos, errores)
+            resultado_error.update(_metadatos_script(argumentos, contenido or None))
+            _guardar_y_emitir(argumentos, resultado_error, error=True)
             return 1
 
         normalizado, errores = _normalizar_script(contenido)
@@ -376,19 +440,27 @@ def ejecutar_dataflow(argumentos: ArgumentosDataflowScript) -> int:
             _escribir_plan_salida(plan, argumentos.plan_salida)
             _guardar_y_emitir(
                 argumentos,
-                _construir_resultado_compilado(
-                    argumentos,
-                    plan,
-                    hash_plan,
-                ),
+                {
+                    **_construir_resultado_compilado(
+                        argumentos,
+                        plan,
+                        hash_plan,
+                    ),
+                    **_metadatos_script(argumentos, contenido),
+                },
             )
             return 0
 
         # El catálogo se carga después de compilar: un script inválido nunca
         # provoca lecturas de configuración ni creación de recursos externos.
         catalogo = cargar_catalogo(argumentos.conexiones)
+        nombre_aplicacion = (
+            Path(argumentos.dataflow_script).stem
+            if argumentos.dataflow_script
+            else "contenido-parametro"
+        )
         spark = _crear_sesion_dataflow(
-            Path(argumentos.dataflow_script).stem,
+            nombre_aplicacion,
             argumentos.ejecucion_id,
         )
         ejecutor = EjecutorPlanDataflow(
@@ -402,7 +474,7 @@ def ejecutar_dataflow(argumentos: ArgumentosDataflowScript) -> int:
         resultado = {
             "estado": "COMPLETADO",
             "ejecucion_id": argumentos.ejecucion_id,
-            "dataflow_script": argumentos.dataflow_script,
+            **_metadatos_script(argumentos, contenido),
             "hash": hash_plan,
             "operaciones": len(plan.operaciones),
             **metricas,

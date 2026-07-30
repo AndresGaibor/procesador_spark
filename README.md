@@ -51,6 +51,8 @@ python motor.py \
 
 El motor también puede compilar y ejecutar scripts exportados por Qlik Dataflow mediante un plan Spark tipado, determinista y fail-closed. La guía completa de catálogo, seguridad, compilación y ejecución está en [`docs/dataflow.md`](docs/dataflow.md).
 
+El script puede enviarse como ruta con `--dataflow-script` o directamente como texto con `--dataflow-script-contenido`. Ambos modos son mutuamente excluyentes.
+
 ## Estructura
 
 ```text

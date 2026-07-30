@@ -320,3 +320,93 @@ def test_stop_llamado_exactamente_una_vez(monkeypatch, tmp_path):
     ejecutor_dataflow.ejecutar_dataflow(args)
 
     assert spark.detenciones == 1
+
+
+def test_contenido_directo_compila_sin_tratarlo_como_ruta(monkeypatch, tmp_path):
+    script = "[Ventas]: LOAD [id] FROM 'ventas.csv';"
+    conexiones = tmp_path / "conexiones.json"
+    conexiones.write_text("{}", encoding="utf-8")
+    plan = tmp_path / "plan.json"
+    resultado = tmp_path / "resultado.json"
+
+    args = ArgumentosDataflowScript(
+        dataflow_script=None,
+        dataflow_script_contenido=script,
+        conexiones=str(conexiones),
+        ejecucion_id="contenido-1",
+        resultado=str(resultado),
+        solo_compilar=True,
+        plan_salida=str(plan),
+    )
+
+    codigo = ejecutor_dataflow.ejecutar_dataflow(args)
+
+    assert codigo == 0
+    payload = json.loads(resultado.read_text(encoding="utf-8"))
+    assert payload["origen_script"] == "parametro"
+    assert payload["referencia_script"] is None
+    assert payload["hash_script"]
+    assert script not in json.dumps(payload, ensure_ascii=False)
+
+
+def test_contenido_directo_rechaza_exceso_de_tamano(tmp_path, monkeypatch):
+    conexiones = tmp_path / "conexiones.json"
+    conexiones.write_text("{}", encoding="utf-8")
+    resultado = tmp_path / "resultado.json"
+    monkeypatch.setattr(ejecutor_dataflow, "LIMITE_TAMANIO_ARCHIVO", 8)
+
+    args = ArgumentosDataflowScript(
+        dataflow_script=None,
+        dataflow_script_contenido="LOAD campo FROM 'archivo.csv';",
+        conexiones=str(conexiones),
+        ejecucion_id="contenido-grande",
+        resultado=str(resultado),
+    )
+
+    codigo = ejecutor_dataflow.ejecutar_dataflow(args)
+
+    assert codigo == 1
+    payload = json.loads(resultado.read_text(encoding="utf-8"))
+    assert payload["errores"][0]["codigo"] == "DFS_FILE_TOO_LARGE"
+    assert "LOAD campo" not in json.dumps(payload, ensure_ascii=False)
+
+
+def test_llamada_programatica_rechaza_ruta_y_contenido_simultaneos(tmp_path):
+    resultado = tmp_path / "resultado.json"
+    args = ArgumentosDataflowScript(
+        dataflow_script=str(tmp_path / "script.qvs"),
+        dataflow_script_contenido="LOAD id FROM 'ventas.csv';",
+        conexiones=str(tmp_path / "conexiones.json"),
+        ejecucion_id="conflicto-1",
+        resultado=str(resultado),
+    )
+
+    codigo = ejecutor_dataflow.ejecutar_dataflow(args)
+
+    assert codigo == 1
+    payload = json.loads(resultado.read_text(encoding="utf-8"))
+    assert payload["errores"][0]["codigo"] == "DFS_SCRIPT_SOURCE_CONFLICT"
+    assert "LOAD id" not in json.dumps(payload, ensure_ascii=False)
+
+
+def test_error_de_parser_no_expone_contenido_directo(tmp_path):
+    script = "SELECT FROM secreto_super_confidencial"
+    resultado = tmp_path / "resultado.json"
+    args = ArgumentosDataflowScript(
+        dataflow_script_contenido=script,
+        conexiones=str(tmp_path / "conexiones.json"),
+        ejecucion_id="error-contenido-1",
+        resultado=str(resultado),
+    )
+
+    codigo = ejecutor_dataflow.ejecutar_dataflow(args)
+
+    assert codigo == 1
+    payload_texto = resultado.read_text(encoding="utf-8")
+    payload = json.loads(payload_texto)
+    assert payload["origen_script"] == "parametro"
+    assert payload["referencia_script"] is None
+    assert payload["hash_script"]
+    # El error puede mencionar el identificador puntual que falló, pero nunca
+    # debe repetir el texto completo enviado por el parámetro.
+    assert script not in payload_texto

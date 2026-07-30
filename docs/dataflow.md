@@ -43,6 +43,40 @@ python motor.py \
 
 La ejecución se detiene en la primera operación fallida. Spark se cierra exactamente una vez desde la capa de aplicación.
 
+
+## Enviar el script directamente como parámetro
+
+Además de recibir una ruta con `--dataflow-script`, el motor acepta el texto Qlik completo mediante `--dataflow-script-contenido`:
+
+```bash
+python motor.py \
+  --dataflow-script-contenido "$SCRIPT_QLIK" \
+  --conexiones /ruta/segura/conexiones.json \
+  --ejecucion-id bancolombia-parametro-001 \
+  --resultado /tmp/bancolombia-resultado.json
+```
+
+Los dos parámetros son mutuamente excluyentes. El contenido conserva saltos de línea, comillas y caracteres Unicode siempre que el proceso que invoca a Python lo entregue como **un único argumento**. En Talend conviene usar la lista de argumentos del componente o proceso, no concatenar manualmente una cadena de shell.
+
+El mismo límite en bytes UTF-8 se aplica tanto al archivo como al contenido directo. Los resultados y logs no incluyen el script completo; exponen únicamente `origen_script`, `referencia_script` y `hash_script`. Cuando el origen es el parámetro, `referencia_script` es `null`.
+
+Ejemplo en Java/Talend al construir un proceso sin reinterpretación de shell:
+
+```java
+java.util.List<String> comando = java.util.Arrays.asList(
+    "python",
+    "motor.py",
+    "--dataflow-script-contenido",
+    context.DATAFLOW_SCRIPT,
+    "--conexiones",
+    context.CONEXIONES_JSON,
+    "--ejecucion-id",
+    context.EJECUCION_ID
+);
+```
+
+No se recomienda incluir el script en una línea como `python motor.py ...` armada por concatenación, porque comillas, signos `$`, saltos de línea y caracteres propios de Qlik podrían ser reinterpretados por el shell.
+
 ## Catálogo de conexiones
 
 El script solo referencia nombres lógicos de `LIB CONNECT TO` y `lib://`. Las URLs, rutas base y allowlists se declaran fuera del script:

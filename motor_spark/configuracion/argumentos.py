@@ -18,13 +18,19 @@ class ArgumentosEjecucion:
 
 @dataclass(frozen=True, slots=True)
 class ArgumentosDataflowScript:
-    dataflow_script: str
     conexiones: str
     ejecucion_id: str
+    dataflow_script: str | None = None
+    dataflow_script_contenido: str | None = None
     resultado: str | None = None
     solo_compilar: bool = False
     plan_salida: str | None = None
     secretos: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def origen_script(self) -> str:
+        """Indica si el script provino de un archivo o del propio parámetro CLI."""
+        return "parametro" if self.dataflow_script_contenido is not None else "archivo"
 
 
 def crear_argumentos() -> argparse.ArgumentParser:
@@ -93,6 +99,14 @@ def _crear_parser_dataflow_script() -> argparse.ArgumentParser:
         dest="dataflow_script",
         help="Atajo para --dataflow-script",
     )
+    grupo.add_argument(
+        "--dataflow-script-contenido",
+        dest="dataflow_script_contenido",
+        help=(
+            "Contenido Qlik completo enviado directamente. "
+            "Es mutuamente excluyente con --dataflow-script."
+        ),
+    )
 
     parser.add_argument("--conexiones", required=False)
     parser.add_argument("--ejecucion-id", required=False)
@@ -128,7 +142,12 @@ def _detectar_modo(argv: Sequence[str] | None) -> str:
         argv = sys.argv[1:]
 
     for arg in argv:
-        if arg in ("--receta", "--dataflow-script", "-dataflowscript"):
+        if arg in (
+            "--receta",
+            "--dataflow-script",
+            "-dataflowscript",
+            "--dataflow-script-contenido",
+        ):
             return arg.lstrip("-")
     return "receta"
 
@@ -163,8 +182,17 @@ def analizar_argumentos(
     if not valores_df.ejecucion_id:
         parser_dataflow.error("--ejecucion-id es requerido en modo dataflow-script")
 
-    if not valores_df.dataflow_script:
-        parser_dataflow.error("--dataflow-script es requerido en modo dataflow-script")
+    if not valores_df.dataflow_script and not valores_df.dataflow_script_contenido:
+        parser_dataflow.error(
+            "--dataflow-script o --dataflow-script-contenido es requerido "
+            "en modo dataflow-script"
+        )
+
+    if (
+        valores_df.dataflow_script_contenido is not None
+        and not valores_df.dataflow_script_contenido.strip()
+    ):
+        parser_dataflow.error("--dataflow-script-contenido no puede estar vacío")
 
     if valores_df.solo_compilar and not valores_df.plan_salida:
         parser_dataflow.error("--solo-compilar requiere --plan-salida")
@@ -173,6 +201,7 @@ def analizar_argumentos(
 
     return ArgumentosDataflowScript(
         dataflow_script=valores_df.dataflow_script,
+        dataflow_script_contenido=valores_df.dataflow_script_contenido,
         conexiones=valores_df.conexiones,
         ejecucion_id=valores_df.ejecucion_id,
         resultado=valores_df.resultado,

@@ -155,3 +155,51 @@ def test_solo_uno_de_receta_o_dataflow_script():
                 "e-1",
             ]
         )
+
+
+def test_dataflow_script_contenido_acepta_texto_directo():
+    script = "[Ventas]: LOAD [id] FROM 'ventas.csv';"
+    resultado = analizar_argumentos(
+        [
+            "--dataflow-script-contenido",
+            script,
+            "--conexiones",
+            "/tmp/conexiones.json",
+            "--ejecucion-id",
+            "e-contenido-1",
+        ]
+    )
+
+    assert isinstance(resultado, ArgumentosDataflowScript)
+    assert resultado.dataflow_script is None
+    assert resultado.dataflow_script_contenido == script
+
+
+def test_dataflow_script_contenido_rechaza_uso_simultaneo_con_ruta():
+    with pytest.raises(SystemExit):
+        analizar_argumentos(
+            [
+                "--dataflow-script",
+                "/tmp/script.qvs",
+                "--dataflow-script-contenido",
+                "LOAD id FROM 'ventas.csv';",
+                "--conexiones",
+                "/tmp/conexiones.json",
+                "--ejecucion-id",
+                "e-1",
+            ]
+        )
+
+
+def test_dataflow_script_contenido_rechaza_vacio():
+    with pytest.raises(SystemExit):
+        analizar_argumentos(
+            [
+                "--dataflow-script-contenido",
+                "",
+                "--conexiones",
+                "/tmp/conexiones.json",
+                "--ejecucion-id",
+                "e-1",
+            ]
+        )
