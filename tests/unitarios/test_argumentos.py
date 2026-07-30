@@ -101,3 +101,21 @@ def test_secreto_invalido_o_duplicado_no_expone_valor(secretos, mensaje, capsys)
     assert mensaje in stderr
     assert "uno" not in stderr
     assert "dos" not in stderr
+
+
+def test_secreto_base64_con_padding_se_conserva_completo():
+    argumentos = analizar_argumentos(
+        [
+            "--dataflow-script-contenido",
+            "LOAD id FROM 'archivo.csv';",
+            "--conexiones-contenido",
+            "{}",
+            "--ejecucion-id",
+            "e-key-b64",
+            "--secreto",
+            "SFTP_PRIVATE_KEY_B64=YWJjZA==",
+        ]
+    )
+
+    assert isinstance(argumentos, ArgumentosDataflowScript)
+    assert argumentos.secretos == (("SFTP_PRIVATE_KEY_B64", "YWJjZA=="),)

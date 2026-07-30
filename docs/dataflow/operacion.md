@@ -80,7 +80,7 @@ Variables de entorno requeridas en el engine:
 | Variable | Descripcion | Ejemplo |
 |----------|-------------|---------|
 | `POSTGRES_PASSWORD` | Password de conexion JDBC | `secret:pass` |
-| `SFTP_PASSWORD` | Password SFTP (si aplica) | `s3cr3t` |
+| `SFTP_PRIVATE_KEY_B64` | Contenido Base64 de la clave privada SFTP | `LS0tLS1CRUdJTi...` |
 
 ### Contrato de Resultado
 

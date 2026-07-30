@@ -1,3 +1,4 @@
+import io
 import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -689,3 +690,143 @@ def test_staging_rechaza_nombres_de_salida_no_atomicos(tmp_path, valor):
     manager.crear_staging("exec-segura")
     with pytest.raises(ValueError, match="nombre de salida"):
         manager.crear_staging_salida("exec-segura", valor)
+
+
+@pytest.mark.skipif(not HAS_PARAMIKO, reason="paramiko no instalado")
+def test_sftp_clave_privada_usa_key_filename_y_passphrase(tmp_path):
+    clave = tmp_path / "sftp_debian"
+    clave.write_text("clave-ficticia", encoding="utf-8")
+    clave.chmod(0o600)
+
+    with patch(
+        "motor_spark.dataflow_script.publicacion.paramiko.SSHClient"
+    ) as mock_ssh:
+        cliente = MagicMock()
+        cliente.open_sftp.return_value = MagicMock()
+        mock_ssh.return_value = cliente
+
+        PublicacionSftp(
+            host="209.50.245.140",
+            puerto=22,
+            usuario="sftpqlik",
+            clave_privada=clave,
+            passphrase="frase-secreta",
+        ).conectar()
+
+        kwargs = cliente.connect.call_args.kwargs
+        assert kwargs["key_filename"] == str(clave)
+        assert kwargs["passphrase"] == "frase-secreta"
+        assert kwargs["look_for_keys"] is False
+        assert kwargs["allow_agent"] is False
+        assert "password" not in kwargs
+
+
+@pytest.mark.skipif(not HAS_PARAMIKO, reason="paramiko no instalado")
+def test_sftp_clave_privada_no_depende_de_rsa_key(tmp_path):
+    clave = tmp_path / "id_ed25519"
+    clave.write_text("clave-ficticia", encoding="utf-8")
+    clave.chmod(0o600)
+
+    with (
+        patch("motor_spark.dataflow_script.publicacion.paramiko.SSHClient") as mock_ssh,
+        patch(
+            "motor_spark.dataflow_script.publicacion.paramiko.RSAKey.from_private_key_file"
+        ) as rsa_loader,
+    ):
+        cliente = MagicMock()
+        cliente.open_sftp.return_value = MagicMock()
+        mock_ssh.return_value = cliente
+
+        PublicacionSftp(
+            host="209.50.245.140",
+            puerto=22,
+            usuario="sftpqlik",
+            clave_privada=clave,
+        ).conectar()
+
+        rsa_loader.assert_not_called()
+
+
+@pytest.mark.skipif(not HAS_PARAMIKO, reason="paramiko no instalado")
+def test_sftp_contenido_clave_usa_pkey_sin_archivo():
+    contenido = "-----BEGIN OPENSSH PRIVATE KEY-----\nfalso\n-----END OPENSSH PRIVATE KEY-----\n"
+    pkey = MagicMock()
+
+    with (
+        patch("motor_spark.dataflow_script.publicacion.paramiko.SSHClient") as mock_ssh,
+        patch.object(
+            PublicacionSftp,
+            "_cargar_clave_desde_contenido",
+            return_value=pkey,
+        ) as cargar_clave,
+    ):
+        cliente = MagicMock()
+        cliente.open_sftp.return_value = MagicMock()
+        mock_ssh.return_value = cliente
+
+        PublicacionSftp(
+            host="209.50.245.140",
+            puerto=22,
+            usuario="sftpqlik",
+            clave_privada_contenido=contenido,
+        ).conectar()
+
+        cargar_clave.assert_called_once_with(contenido, None)
+        kwargs = cliente.connect.call_args.kwargs
+        assert kwargs["pkey"] is pkey
+        assert "key_filename" not in kwargs
+        assert "password" not in kwargs
+
+
+def test_decodificar_clave_privada_base64_valida_contenido():
+    import base64
+
+    from motor_spark.dataflow_script.publicacion import (
+        decodificar_clave_privada_base64,
+    )
+
+    clave = (
+        "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----\n"
+    )
+    valor = base64.b64encode(clave.encode("utf-8")).decode("ascii")
+
+    assert decodificar_clave_privada_base64(valor) == clave
+
+
+def test_decodificar_clave_privada_base64_rechaza_valor_invalido():
+    from motor_spark.dataflow_script.publicacion import (
+        decodificar_clave_privada_base64,
+    )
+
+    with pytest.raises(ValueError, match="Base64"):
+        decodificar_clave_privada_base64("no-es-base64!!!")
+
+
+@pytest.mark.skipif(not HAS_PARAMIKO, reason="paramiko no instalado")
+def test_cargar_clave_desde_contenido_detecta_rsa_real():
+    from motor_spark.dataflow_script.publicacion import paramiko
+
+    contenido = io.StringIO()
+    original = paramiko.RSAKey.generate(1024)
+    original.write_private_key(contenido)
+
+    cargada = PublicacionSftp._cargar_clave_desde_contenido(
+        contenido.getvalue(),
+        None,
+    )
+
+    assert isinstance(cargada, paramiko.RSAKey)
+
+
+def test_publicacion_sftp_rechaza_modos_auth_ambiguos():
+    with pytest.raises(ValueError, match="exactamente"):
+        PublicacionSftp(
+            host="209.50.245.140",
+            puerto=22,
+            usuario="sftpqlik",
+            password="clave",
+            clave_privada_contenido=(
+                "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n"
+                "-----END OPENSSH PRIVATE KEY-----\n"
+            ),
+        )

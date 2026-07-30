@@ -56,7 +56,7 @@ class SecureError(Exception):
 
 class ValidadorSecretos:
     PATRON_SENSIBLE = re.compile(
-        r"(password|secret|token|api_key|apikey|auth|bearer|credential)",
+        r"(password|passphrase|private_key|secret|token|api_key|apikey|auth|bearer|credential)",
         re.IGNORECASE,
     )
 

@@ -86,7 +86,11 @@ def _construir_catalogo(datos: dict[str, Any]) -> CatalogoConexiones:
                 nombre=s["nombre"],
                 host=s["host"],
                 puerto=s.get("puerto", 22),
-                secreto_nombre=s["secreto_nombre"],
+                secreto_nombre=s.get("secreto_nombre"),
+                usuario=s.get("usuario"),
+                clave_privada=s.get("clave_privada"),
+                secreto_clave_privada_nombre=s.get("secreto_clave_privada_nombre"),
+                secreto_passphrase_nombre=s.get("secreto_passphrase_nombre"),
                 ruta_base=s.get("ruta_base", "/"),
                 allowlist=tuple(
                     CampoAllowlist(
@@ -179,6 +183,10 @@ class ResolvedorConexiones:
             "host": conn.host,
             "puerto": conn.puerto,
             "secreto_nombre": conn.secreto_nombre,
+            "usuario": conn.usuario,
+            "clave_privada": conn.clave_privada,
+            "secreto_clave_privada_nombre": conn.secreto_clave_privada_nombre,
+            "secreto_passphrase_nombre": conn.secreto_passphrase_nombre,
             "ruta_base": conn.ruta_base,
         }
 
