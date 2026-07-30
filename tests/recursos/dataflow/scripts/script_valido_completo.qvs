@@ -1,0 +1,27 @@
+SET varEntorno = "produccion";
+LIB CONNECT TO "local_files";
+
+ventas:
+LOAD
+    id,
+    cliente,
+    monto,
+    fecha
+FROM "lib://local_files/datos/ventas.csv"
+;
+
+resultado:
+LOAD
+    id,
+    cliente,
+    monto * 1.19 AS monto_con_iva,
+    YEAR(fecha) AS anio,
+    MONTH(fecha) AS mes
+RESIDENT ventas
+WHERE monto > 100
+;
+
+DROP TABLE ventas;
+
+OUTPUT:
+STORE resultado INTO 'lib://local_files/salida/resultado.csv';

@@ -53,9 +53,7 @@ def test_cargar_receta_conserva_error_entrada_no_objeto():
 
 def test_cargar_receta_conserva_error_modo_esquema_invalido():
     with pytest.raises(ErrorReceta) as error:
-        cargar_receta(
-            '{"entrada": {"modo_esquema": "automatico"}, "salida": {}}'
-        )
+        cargar_receta('{"entrada": {"modo_esquema": "automatico"}, "salida": {}}')
     assert str(error.value) == (
         "entrada.modo_esquema debe ser 'estricto' o 'inferir', "
         "pero se recibió: 'automatico'"
@@ -67,6 +65,4 @@ def test_cargar_receta_conserva_error_tipos_forzados_no_objeto():
         ErrorReceta,
         match="entrada.tipos_forzados debe ser un objeto",
     ):
-        cargar_receta(
-            '{"entrada": {"tipos_forzados": []}, "salida": {}}'
-        )
+        cargar_receta('{"entrada": {"tipos_forzados": []}, "salida": {}}')

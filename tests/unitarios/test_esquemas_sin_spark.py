@@ -1,7 +1,6 @@
 import pytest
 
 from motor_spark.configuracion.modelos.entrada import EntradaConfig
-from motor_spark.dominio.errores import ErrorReceta
 from motor_spark.dominio.esquemas import obtener_modo_esquema
 
 

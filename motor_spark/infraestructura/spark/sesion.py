@@ -12,9 +12,7 @@ def crear_sesion_spark(
 ) -> Any:
     from pyspark.sql import SparkSession
 
-    spark = SparkSession.builder.appName(
-        f"{nombre} - {ejecucion_id}"
-    ).getOrCreate()
+    spark = SparkSession.builder.appName(f"{nombre} - {ejecucion_id}").getOrCreate()
     spark.sparkContext.setLogLevel(configuracion.nivel_log)
     if configuracion.shuffle_partitions:
         spark.conf.set(

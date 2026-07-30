@@ -4,7 +4,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
 _ALIASES_MODO_ESQUEMA = {
     "strict": "estricto",
     "schema": "estricto",

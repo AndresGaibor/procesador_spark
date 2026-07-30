@@ -40,10 +40,7 @@ def leer_datos(
 
     if modo_esquema == "inferir":
         if esquema is not None:
-            raise ErrorReceta(
-                "En modo inferir no debe aplicarse "
-                "un StructType fijo"
-            )
+            raise ErrorReceta("En modo inferir no debe aplicarse un StructType fijo")
         if formato == "csv":
             tiene_cabecera = convertir_booleano(
                 opciones.get("header"),
@@ -51,8 +48,7 @@ def leer_datos(
             )
             if not tiene_cabecera:
                 raise ErrorReceta(
-                    "El modo inferir para CSV requiere "
-                    "entrada.opciones.header=true"
+                    "El modo inferir para CSV requiere entrada.opciones.header=true"
                 )
             inferir_tipos = convertir_booleano(
                 configuracion.inferir_tipos,

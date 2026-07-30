@@ -1,0 +1,8 @@
+-- Script invalido: Tabla referenciada antes de ser definida (RESIDENT futuro)
+resultado:
+LOAD
+    nombre,
+    SUM(valor) AS total
+RESIDENT ventas_no_definida
+GROUP BY nombre
+;

@@ -20,13 +20,8 @@ def aplicar_pasos(
         emitir(f"PASO_INICIO numero={numero} tipo={tipo}")
         manejador = REGISTRO_TRANSFORMACIONES.get(tipo)
         if manejador is None:
-            raise ErrorReceta(
-                f"Operación no soportada en el paso {numero}: {tipo}"
-            )
+            raise ErrorReceta(f"Operación no soportada en el paso {numero}: {tipo}")
         resultado = manejador(resultado, paso, numero)
-        emitir(
-            f"PASO_FIN numero={numero} "
-            f"tipo={tipo} columnas={resultado.columns}"
-        )
+        emitir(f"PASO_FIN numero={numero} tipo={tipo} columnas={resultado.columns}")
 
     return resultado

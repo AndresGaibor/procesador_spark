@@ -1,0 +1,28 @@
+-- Script valido: JOIN seguro (tablas relacionadas)
+clientes:
+LOAD
+    id,
+    nombre,
+    email
+FROM "lib://local_files/datos/clientes.csv";
+
+pedidos:
+LOAD
+    cliente_id,
+    monto,
+    fecha
+FROM "lib://local_files/datos/pedidos.csv";
+
+resultado:
+SELECT
+    c.id,
+    c.nombre,
+    p.monto,
+    p.fecha
+FROM "clientes" c
+LEFT JOIN "pedidos" p ON c.id = p.cliente_id
+WHERE c.id > 0
+;
+
+DROP TABLE clientes;
+DROP TABLE pedidos;

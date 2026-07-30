@@ -47,6 +47,24 @@ python motor.py \
   --ejecucion-id ejec-002
 ```
 
+## Scripts Qlik Dataflow
+
+El motor también puede compilar y ejecutar scripts exportados por Qlik Dataflow mediante un plan Spark tipado, determinista y fail-closed. La guía completa de catálogo, seguridad, compilación y ejecución está en [`docs/dataflow.md`](docs/dataflow.md).
+
+Para ejecutar sin guardar el script, el catálogo ni el resultado en archivos:
+
+```bash
+python motor.py \
+  --dataflow-script-contenido "$SCRIPT_QLIK" \
+  --conexiones-contenido "$CONEXIONES_JSON" \
+  --secreto "POSTGRES=usuario:clave" \
+  --ejecucion-id ejecucion-inline-001
+```
+
+Al omitir `--resultado`, el motor entrega únicamente `RESULTADO_MOTOR={...}` por consola.
+
+El script puede enviarse como ruta con `--dataflow-script` o directamente como texto con `--dataflow-script-contenido`. Ambos modos son mutuamente excluyentes.
+
 ## Estructura
 
 ```text
@@ -175,4 +193,3 @@ Por seguridad, `overwrite` sobre rutas locales solo está permitido dentro de:
 ```
 
 El motor prepara esa carpeta con grupo `spark`, bit setgid y permisos `2770`, y luego usa `append` internamente para impedir que Spark elimine los permisos preparados.
-# procesador_spark

@@ -1,0 +1,4 @@
+datos:
+LOAD id, nombre, valor FROM "lib://local/data/entrada.csv";
+
+SELECT id, nombre, valor FROM "datos";

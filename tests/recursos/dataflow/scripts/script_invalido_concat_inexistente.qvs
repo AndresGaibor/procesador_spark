@@ -1,0 +1,3 @@
+-- Script invalido: CONCATENATE objetivo inexistente
+CONCATENATE (tabla_inexistente)
+LOAD id, nombre FROM "lib://local_files/datos/parte1.csv";

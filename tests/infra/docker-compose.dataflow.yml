@@ -1,0 +1,47 @@
+# Docker Compose para tests de infraestructura Dataflow
+#
+# Uso:
+#   cp .env.example .env
+#   # editar .env y establecer POSTGRES_PASSWORD
+#   docker compose -f tests/infra/docker-compose.dataflow.yml up -d
+#   # esperar healthchecks
+#   docker compose -f tests/infra/docker-compose.dataflow.yml ps
+#   # limpiar
+#   docker compose -f tests/infra/docker-compose.dataflow.yml down -v
+
+services:
+  postgres_dataflow:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:-localhost}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_USER: ${POSTGRES_USER:-testuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-testdb}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_dataflow_vol:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-testuser}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  sftp_dataflow:
+    image: atmoz/sftp:alpine
+    environment:
+      SFTP_HOST: ${SFTP_HOST:-localhost}
+      SFTP_PORT: ${SFTP_PORT:-2222}
+      SFTP_USERS: ${SFTP_USERS:-dataflow:dataflow:1001}
+    ports:
+      - "${SFTP_PORT:-2222}:22"
+    volumes:
+      - sftp_dataflow_vol:/home/dataflow/upload
+      - ./tests/recursos/dataflow/datos:/tmp/datos:ro
+    command: dataflow:dataflow:::upload
+
+volumes:
+  postgres_dataflow_vol:
+  sftp_dataflow_vol:

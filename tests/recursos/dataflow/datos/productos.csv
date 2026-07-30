@@ -1,0 +1,6 @@
+id,precio,cantidad,nombre,region
+1,10.50,5,Camisa,Norte
+2,25.00,12,Pantalon,Norte
+3,8.75,20,Calcetin,Sur
+4,45.00,3,Chaqueta,Este
+5,15.00,8,Camisa,Oeste

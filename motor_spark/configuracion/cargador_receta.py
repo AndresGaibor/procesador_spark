@@ -12,26 +12,19 @@ from motor_spark.configuracion.modelos.receta import RecetaConfig
 from motor_spark.dominio.errores import ErrorReceta
 
 
-
 def _validar_entrada_compatible(receta: dict[str, Any]) -> None:
     entrada = receta.get("entrada", {})
     if not isinstance(entrada, dict):
         raise ErrorReceta("receta.entrada debe ser un objeto")
 
     try:
-        normalizar_modo_esquema(
-            entrada.get("modo_esquema", "estricto")
-        )
+        normalizar_modo_esquema(entrada.get("modo_esquema", "estricto"))
     except ValueError as excepcion:
         raise ErrorReceta(str(excepcion)) from excepcion
 
     tipos_forzados = entrada.get("tipos_forzados", {})
-    if tipos_forzados is not None and not isinstance(
-        tipos_forzados, dict
-    ):
-        raise ErrorReceta(
-            "entrada.tipos_forzados debe ser un objeto"
-        )
+    if tipos_forzados is not None and not isinstance(tipos_forzados, dict):
+        raise ErrorReceta("entrada.tipos_forzados debe ser un objeto")
 
 
 def _validar_tipos_paso(receta: dict[str, Any]) -> None:
@@ -48,9 +41,7 @@ def _validar_tipos_paso(receta: dict[str, Any]) -> None:
         if not tipo:
             raise ErrorReceta(f"El paso {numero} no tiene tipo")
         if tipo not in TIPOS_PASO_SOPORTADOS:
-            raise ErrorReceta(
-                f"Operación no soportada en el paso {numero}: {tipo}"
-            )
+            raise ErrorReceta(f"Operación no soportada en el paso {numero}: {tipo}")
 
 
 def _mensaje_validacion(error: ValidationError) -> str:

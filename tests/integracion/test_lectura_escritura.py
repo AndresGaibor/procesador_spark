@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 
 pytest.importorskip("pyspark")
@@ -23,9 +21,7 @@ def test_csv_estricto_a_parquet(spark_local, tmp_path):
     datos = leer_datos(
         spark=spark_local,
         ruta=str(entrada),
-        esquema=construir_esquema(
-            "id:entero|nombre:texto|total:decimal(10,2)"
-        ),
+        esquema=construir_esquema("id:entero|nombre:texto|total:decimal(10,2)"),
         configuracion=EntradaConfig(
             formato="csv",
             opciones={"header": True},

@@ -26,13 +26,9 @@ def construir_esquema(especificacion: str) -> Any:
     ):
         definicion = definicion.strip()
         if not definicion:
-            raise ErrorReceta(
-                f"Definición vacía en la posición {posicion}"
-            )
+            raise ErrorReceta(f"Definición vacía en la posición {posicion}")
         if ":" not in definicion:
-            raise ErrorReceta(
-                f"Falta ':' en la definición: {definicion}"
-            )
+            raise ErrorReceta(f"Falta ':' en la definición: {definicion}")
 
         nombre, tipo = definicion.split(":", 1)
         nombre = nombre.strip()
@@ -85,10 +81,7 @@ def convertir_columnas_void_a_string(datos: Any) -> Any:
             convertidas.append(campo.name)
 
     if convertidas:
-        emitir(
-            "COLUMNAS_VOID_CONVERTIDAS_STRING="
-            + ",".join(convertidas)
-        )
+        emitir("COLUMNAS_VOID_CONVERTIDAS_STRING=" + ",".join(convertidas))
     return resultado
 
 
@@ -130,7 +123,7 @@ def validar_evolucion_esquema(
                 f"NUEVO={tipo_nuevo}"
             )
 
-    nuevas_columnas = campos_nuevos[len(campos_actuales):]
+    nuevas_columnas = campos_nuevos[len(campos_actuales) :]
     emitir(
         "EVOLUCION_ESQUEMA_SPARK_VALIDADA=true "
         f"actual={len(campos_actuales)} "

@@ -1,5 +1,3 @@
-from types import SimpleNamespace
-
 from motor_spark.aplicacion.resultado_ejecucion import (
     construir_resultado_error,
     construir_resultado_exito,
@@ -37,7 +35,9 @@ def test_resultado_error_conserva_claves():
 
 def test_resultado_exito_conserva_contrato_actual():
     argumentos = ArgumentosEjecucion("{}", "in", "out", "", None, "e-1")
-    receta = RecetaConfig.model_validate({"nombre": "Ventas", "version": 2, "salida": {}})
+    receta = RecetaConfig.model_validate(
+        {"nombre": "Ventas", "version": 2, "salida": {}}
+    )
     resultado = construir_resultado_exito(
         argumentos=argumentos,
         receta=receta,

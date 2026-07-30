@@ -26,12 +26,6 @@ def test_incremental_sin_destino_deduplica_lote(spark_local, tmp_path):
         configuracion_salida=SalidaConfig(),
     )
     assert resultado.total_registros == 2
-    assert resultado.metricas_incrementales[
-        "total_registros_entrada"
-    ] == 3
-    assert resultado.metricas_incrementales[
-        "total_registros_nuevos"
-    ] == 2
-    assert resultado.metricas_incrementales[
-        "total_registros_duplicados"
-    ] == 1
+    assert resultado.metricas_incrementales["total_registros_entrada"] == 3
+    assert resultado.metricas_incrementales["total_registros_nuevos"] == 2
+    assert resultado.metricas_incrementales["total_registros_duplicados"] == 1

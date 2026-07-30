@@ -1,0 +1,37 @@
+-- Script Bancolombia Ventas: Constructos Qlik soportados
+-- No contiene credenciales reales, solo nombres de tablas/campos de ejemplo
+-- Este script es un fixture de prueba, no un script ejecutable real
+
+SET gEntorno = "prueba";
+SET gFechaCorte = "2024-12-31";
+
+LIB CONNECT TO [Bancolombia prueba:Postgres_BanColombia_Prueba];
+
+[Ventas]:
+LOAD
+    [venta_id],
+    [sucursal_id],
+    [anio_venta_year],
+    [total_venta]
+FROM [lib://Bancolombia prueba:SFTP//datos/ventas.csv]
+;
+
+[Sucursales]:
+LOAD
+    [sucursal_id],
+    [nombre_sucursal]
+FROM [lib://Bancolombia prueba:SFTP//datos/sucursales.csv]
+;
+
+DROP TABLE [Ventas];
+
+STORE [Sucursales] INTO [lib://Bancolombia prueba:SFTP//upload/sucursales.csv] (txt);
+
+-- NOTAS sobre constructos NO soportados:
+-- 1. COUNT(DISTINCT ...) - El parser no maneja DISTINCT dentro de funciones
+-- 2. Window(WRank(...)) - Requiere evaluador de expresiones de ventana
+-- 3. NOCONCATENATE como prefijo de LOAD en scripts multi-sentencia
+-- 4. GROUP BY en LOAD RESIDENT con agregaciones complejas
+-- 5. Preceding LOAD encadenados con expresiones complejas
+-- 6. JOIN natural sin campos comunes explícitos
+-- 7. STORE con formato (txt) requiere validación de URI lib

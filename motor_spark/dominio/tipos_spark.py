@@ -50,9 +50,7 @@ def convertir_tipo_spark(tipo_crudo: str) -> Any:
         precision = int(coincidencia.group(1))
         escala = int(coincidencia.group(2))
         if precision < 1 or precision > 38:
-            raise ErrorReceta(
-                f"Precisión decimal fuera del rango 1-38: {tipo}"
-            )
+            raise ErrorReceta(f"Precisión decimal fuera del rango 1-38: {tipo}")
         if escala < 0 or escala > precision:
             raise ErrorReceta(f"Escala decimal inválida: {tipo}")
         return DecimalType(precision, escala)
