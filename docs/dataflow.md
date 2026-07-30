@@ -197,7 +197,9 @@ Construcciones como `UNION`, `RIGHT JOIN`, `FULL JOIN`, `HAVING`, `CASE`, SQL li
 - Las claves inline se decodifican desde Base64 y se cargan con `StringIO`; no se escriben en archivos temporales.
 - Se detectan claves OpenSSH Ed25519, ECDSA y RSA. Una passphrase opcional se referencia mediante `secreto_passphrase_nombre`.
 - El host debe estar registrado previamente en `known_hosts` del usuario que ejecuta el Remote Engine.
-- La publicación carga primero `archivo.partial` con confirmación y luego lo renombra al nombre definitivo.
+- La publicación carga primero `archivo.partial` con confirmación y luego lo promueve al nombre definitivo.
+- En servidores OpenSSH se usa `posix_rename`, que reemplaza atómicamente un archivo anterior con el mismo nombre.
+- Si esa extensión no existe, se usa un backup temporal con rollback para conservar el archivo anterior ante fallos intermedios.
 - Ante error se intenta eliminar el parcial y se cierran SFTP y SSH sin ocultar la causa original.
 - El directorio remoto debe existir y estar autorizado por la allowlist.
 

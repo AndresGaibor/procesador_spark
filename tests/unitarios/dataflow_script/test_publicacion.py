@@ -1,7 +1,7 @@
 import io
 import os
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -520,9 +520,172 @@ class TestPublicacionSftpMocks:
 
             pub.publicar(archivo_local, ruta_remota)
 
-            mock_sftp.rename.assert_called_once()
-            rename_args = mock_sftp.rename.call_args[0]
-            assert rename_args[1] == str(ruta_remota)
+            mock_sftp.posix_rename.assert_called_once_with(
+                str(ruta_remota) + ".partial",
+                str(ruta_remota),
+            )
+            mock_sftp.rename.assert_not_called()
+
+    @pytest.mark.skipif(not HAS_PARAMIKO, reason="paramiko no instalado")
+    def test_sftp_reemplaza_destino_existente_con_posix_rename(self, tmp_path):
+        """OpenSSH permite promover el parcial reemplazando el CSV anterior."""
+        with patch(
+            "motor_spark.dataflow_script.publicacion.paramiko.SSHClient"
+        ) as mock_ssh:
+            mock_instance = MagicMock()
+            mock_sftp = MagicMock()
+            mock_instance.open_sftp.return_value = mock_sftp
+            mock_ssh.return_value = mock_instance
+
+            pub = PublicacionSftp(
+                host="servidor.example.com",
+                puerto=22,
+                usuario="testuser",
+                password="testpassword",
+            )
+            pub.conectar()
+            archivo_local = tmp_path / "test.csv"
+            archivo_local.write_text("nuevo", encoding="utf-8")
+            ruta_remota = Path("/upload/test.csv")
+
+            pub.publicar(archivo_local, ruta_remota)
+
+            mock_sftp.posix_rename.assert_called_once_with(
+                "/upload/test.csv.partial",
+                "/upload/test.csv",
+            )
+            mock_sftp.rename.assert_not_called()
+
+    @pytest.mark.skipif(not HAS_PARAMIKO, reason="paramiko no instalado")
+    def test_sftp_fallback_reemplaza_destino_sin_posix_rename(self, tmp_path):
+        """Un servidor SFTP básico conserva la publicación con backup y promoción."""
+        with (
+            patch(
+                "motor_spark.dataflow_script.publicacion.paramiko.SSHClient"
+            ) as mock_ssh,
+            patch("motor_spark.dataflow_script.publicacion.uuid4") as mock_uuid,
+        ):
+            mock_uuid.return_value.hex = "abc123"
+            mock_instance = MagicMock()
+            mock_sftp = MagicMock()
+            mock_sftp.posix_rename.side_effect = OSError("Operation unsupported")
+            mock_sftp.stat.return_value = MagicMock()
+            mock_instance.open_sftp.return_value = mock_sftp
+            mock_ssh.return_value = mock_instance
+
+            pub = PublicacionSftp(
+                host="servidor.example.com",
+                puerto=22,
+                usuario="testuser",
+                password="testpassword",
+            )
+            pub.conectar()
+            archivo_local = tmp_path / "test.csv"
+            archivo_local.write_text("nuevo", encoding="utf-8")
+
+            pub.publicar(archivo_local, Path("/upload/test.csv"))
+
+            backup = "/upload/test.csv.backup-abc123"
+            assert mock_sftp.rename.call_args_list == [
+                call("/upload/test.csv", backup),
+                call("/upload/test.csv.partial", "/upload/test.csv"),
+            ]
+            mock_sftp.remove.assert_called_once_with(backup)
+
+    @pytest.mark.skipif(not HAS_PARAMIKO, reason="paramiko no instalado")
+    def test_sftp_fallback_sin_destino_promueve_directamente(self, tmp_path):
+        with patch(
+            "motor_spark.dataflow_script.publicacion.paramiko.SSHClient"
+        ) as mock_ssh:
+            mock_instance = MagicMock()
+            mock_sftp = MagicMock()
+            mock_sftp.posix_rename.side_effect = OSError("Operation unsupported")
+            mock_sftp.stat.side_effect = FileNotFoundError()
+            mock_instance.open_sftp.return_value = mock_sftp
+            mock_ssh.return_value = mock_instance
+
+            pub = PublicacionSftp(
+                host="servidor.example.com",
+                puerto=22,
+                usuario="testuser",
+                password="testpassword",
+            )
+            pub.conectar()
+            archivo_local = tmp_path / "test.csv"
+            archivo_local.write_text("nuevo", encoding="utf-8")
+
+            pub.publicar(archivo_local, Path("/upload/test.csv"))
+
+            mock_sftp.rename.assert_called_once_with(
+                "/upload/test.csv.partial",
+                "/upload/test.csv",
+            )
+
+    @pytest.mark.skipif(not HAS_PARAMIKO, reason="paramiko no instalado")
+    def test_sftp_fallback_restaura_destino_si_falla_promocion(self, tmp_path):
+        with (
+            patch(
+                "motor_spark.dataflow_script.publicacion.paramiko.SSHClient"
+            ) as mock_ssh,
+            patch("motor_spark.dataflow_script.publicacion.uuid4") as mock_uuid,
+        ):
+            mock_uuid.return_value.hex = "rollback"
+            mock_instance = MagicMock()
+            mock_sftp = MagicMock()
+            mock_sftp.posix_rename.side_effect = OSError("Operation unsupported")
+            mock_sftp.stat.return_value = MagicMock()
+            mock_sftp.rename.side_effect = [None, OSError("promoción falló"), None]
+            mock_instance.open_sftp.return_value = mock_sftp
+            mock_ssh.return_value = mock_instance
+
+            pub = PublicacionSftp(
+                host="servidor.example.com",
+                puerto=22,
+                usuario="testuser",
+                password="testpassword",
+            )
+            pub.conectar()
+            archivo_local = tmp_path / "test.csv"
+            archivo_local.write_text("nuevo", encoding="utf-8")
+
+            with pytest.raises(RuntimeError, match="promoción falló"):
+                pub.publicar(archivo_local, Path("/upload/test.csv"))
+
+            backup = "/upload/test.csv.backup-rollback"
+            assert mock_sftp.rename.call_args_list == [
+                call("/upload/test.csv", backup),
+                call("/upload/test.csv.partial", "/upload/test.csv"),
+                call(backup, "/upload/test.csv"),
+            ]
+            mock_sftp.remove.assert_called_with("/upload/test.csv.partial")
+
+    @pytest.mark.skipif(not HAS_PARAMIKO, reason="paramiko no instalado")
+    def test_sftp_no_oculta_error_real_de_posix_rename(self, tmp_path):
+        """Permisos o disco lleno deben fallar, no activar el fallback."""
+        with patch(
+            "motor_spark.dataflow_script.publicacion.paramiko.SSHClient"
+        ) as mock_ssh:
+            mock_instance = MagicMock()
+            mock_sftp = MagicMock()
+            mock_sftp.posix_rename.side_effect = PermissionError("Permission denied")
+            mock_instance.open_sftp.return_value = mock_sftp
+            mock_ssh.return_value = mock_instance
+
+            pub = PublicacionSftp(
+                host="servidor.example.com",
+                puerto=22,
+                usuario="testuser",
+                password="testpassword",
+            )
+            pub.conectar()
+            archivo_local = tmp_path / "test.csv"
+            archivo_local.write_text("nuevo", encoding="utf-8")
+
+            with pytest.raises(RuntimeError, match="Permission denied"):
+                pub.publicar(archivo_local, Path("/upload/test.csv"))
+
+            mock_sftp.rename.assert_not_called()
+            mock_sftp.remove.assert_called_once_with("/upload/test.csv.partial")
 
     @pytest.mark.skipif(not HAS_PARAMIKO, reason="paramiko no instalado")
     def test_sftp_timeout_configurado(self):

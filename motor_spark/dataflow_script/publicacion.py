@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from typing_extensions import Self
 
@@ -471,6 +472,77 @@ class PublicacionSftp:
                 self._cliente.close()
             self._cliente = None
 
+    @staticmethod
+    def _es_posix_rename_no_soportado(excepcion: Exception) -> bool:
+        """Distingue ausencia de la extensión de un fallo real de permisos.
+
+        Paramiko expone ``posix_rename`` aunque el servidor no anuncie la
+        extensión OpenSSH. En ese caso el servidor suele responder
+        ``Operation unsupported``. Otros errores, por ejemplo permisos o disco
+        lleno, deben propagarse y no activar un fallback que podría ocultarlos.
+        """
+        if isinstance(excepcion, AttributeError):
+            return True
+        mensaje = str(excepcion).casefold()
+        return "unsupported" in mensaje or "not supported" in mensaje
+
+    @staticmethod
+    def _ruta_remota_existe(sftp: Any, ruta: str) -> bool:
+        """Consulta existencia sin convertir otros errores en "no existe"."""
+        try:
+            sftp.stat(ruta)
+            return True
+        except FileNotFoundError:
+            return False
+        except OSError as excepcion:
+            mensaje = str(excepcion).casefold()
+            if getattr(excepcion, "errno", None) == 2 or "no such file" in mensaje:
+                return False
+            raise
+
+    @classmethod
+    def _promover_parcial(
+        cls,
+        sftp: Any,
+        parcial_remoto: str,
+        destino_remoto: str,
+    ) -> None:
+        """Promueve el parcial reemplazando de forma segura el destino previo.
+
+        OpenSSH ofrece ``posix-rename@openssh.com``, equivalente remoto de
+        ``os.replace``: el destino anterior se reemplaza atómicamente. Si un
+        servidor no soporta esa extensión, se usa un protocolo con backup y
+        rollback para no perder el archivo anterior ante un fallo intermedio.
+        """
+        try:
+            sftp.posix_rename(parcial_remoto, destino_remoto)
+            return
+        except Exception as excepcion:
+            if not cls._es_posix_rename_no_soportado(excepcion):
+                raise
+
+        if not cls._ruta_remota_existe(sftp, destino_remoto):
+            sftp.rename(parcial_remoto, destino_remoto)
+            return
+
+        backup_remoto = f"{destino_remoto}.backup-{uuid4().hex}"
+        sftp.rename(destino_remoto, backup_remoto)
+        try:
+            sftp.rename(parcial_remoto, destino_remoto)
+        except Exception:
+            try:
+                sftp.rename(backup_remoto, destino_remoto)
+            except Exception as rollback_error:
+                raise RuntimeError(
+                    "Falló la promoción SFTP y también el rollback del archivo anterior"
+                ) from rollback_error
+            raise
+        else:
+            # El destino nuevo ya está publicado. Un fallo al borrar el backup
+            # no invalida el archivo final, por lo que la limpieza es best-effort.
+            with suppress(Exception):
+                sftp.remove(backup_remoto)
+
     def publicar(
         self,
         archivo_local: Path,
@@ -492,7 +564,7 @@ class PublicacionSftp:
                 parcial_remoto,
                 confirm=True,
             )
-            sftp.rename(parcial_remoto, str(ruta_remota))
+            self._promover_parcial(sftp, parcial_remoto, str(ruta_remota))
         except Exception as e:
             # El rollback remoto puede fallar si el servidor nunca creó el parcial.
             with suppress(Exception):

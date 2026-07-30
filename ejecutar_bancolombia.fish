@@ -65,6 +65,50 @@ if not string match --quiet --regex '\S' -- "$SCRIPT_QLIK"
     exit 1
 end
 
+# Este ejecutor es específico para el Dataflow Bancolombia. Antes de pedir
+# credenciales comprobamos que el portapapeles contenga el script esperado y
+# no una contraseña, un fragmento del Qlik o el log de una ejecución anterior.
+# La validación no imprime el contenido: solo informa tamaño y marcadores.
+set -l SCRIPT_LINEAS (printf '%s\n' "$SCRIPT_QLIK" | wc -l | string trim)
+set -l SCRIPT_BYTES (printf '%s' "$SCRIPT_QLIK" | wc -c | string trim)
+set -l MARCADORES_FALTANTES
+
+for MARCADOR in \
+        'LIB CONNECT TO' \
+        'demo_dataflow.ventas_2025' \
+        'demo_dataflow.ventas_2026' \
+        'demo_dataflow.clientes' \
+        'demo_dataflow.productos' \
+        'demo_dataflow.sucursales' \
+        'demo_dataflow.vendedores' \
+        'demo_dataflow.devoluciones' \
+        'ventas_rechazadas.csv' \
+        'ventas_curadas.csv' \
+        'muestra_calidad.csv' \
+        'resumen_mensual.csv'
+    if not string match --quiet "*$MARCADOR*" -- "$SCRIPT_QLIK"
+        set -a MARCADORES_FALTANTES "$MARCADOR"
+    end
+end
+
+if test "$SCRIPT_LINEAS" -lt 100 -o (count $MARCADORES_FALTANTES) -gt 0
+    echo "ERROR: El portapapeles no contiene el Dataflow Bancolombia completo." >&2
+    echo "Contenido recibido: $SCRIPT_LINEAS línea(s), $SCRIPT_BYTES byte(s)." >&2
+
+    if test (count $MARCADORES_FALTANTES) -gt 0
+        echo "Marcadores faltantes:" >&2
+        for MARCADOR in $MARCADORES_FALTANTES
+            echo "  - $MARCADOR" >&2
+        end
+    end
+
+    echo >&2
+    echo "Copia únicamente el script Qlik completo y vuelve a ejecutar." >&2
+    exit 1
+end
+
+echo "Script Qlik validado: $SCRIPT_LINEAS líneas, $SCRIPT_BYTES bytes."
+
 
 # ============================================================
 # NORMALIZAR LOS DESTINOS SFTP
