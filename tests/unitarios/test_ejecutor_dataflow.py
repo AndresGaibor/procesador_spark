@@ -586,3 +586,92 @@ def test_catalogo_inline_invalido_no_crea_spark_ni_expone_contenido(
     assert catalogo_invalido not in combinado
     assert "MARCADOR_SUPER_SECRETO" not in combinado
     assert "RESULTADO_MOTOR=" in combinado
+
+
+def test_motor_secretos_json_llega_al_ejecutor(monkeypatch, capsys):
+    script = "[Ventas]: LOAD id FROM 'lib://Landing/ventas.csv';"
+    conexiones = json.dumps(
+        {
+            "version": 1,
+            "jdbc": [],
+            "locales": [
+                {
+                    "nombre": "Landing",
+                    "ruta_base": "/srv/landing",
+                    "allowlist": [{"esquema": "", "tabla": "ventas.csv", "campos": []}],
+                }
+            ],
+            "sftp": [],
+        }
+    )
+    monkeypatch.setenv(
+        "MOTOR_SECRETOS_JSON",
+        json.dumps(
+            {
+                "POSTGRES_BANCOLOMBIA": "usuario:clave-json",
+                "SFTP_PRIVATE_KEY_B64": "base64-json",
+            }
+        ),
+    )
+    capturado = {}
+    spark = SparkFalso()
+
+    class EjecutorFalso:
+        def __init__(self, **kwargs):
+            capturado.update(kwargs)
+
+        def ejecutar(self, plan):
+            return {
+                "operaciones_ejecutadas": len(plan.operaciones),
+                "tablas_disponibles": (),
+                "publicaciones": (),
+            }
+
+    monkeypatch.setattr(ejecutor_dataflow, "_crear_sesion_dataflow", lambda *a: spark)
+    monkeypatch.setattr(ejecutor_dataflow, "EjecutorPlanDataflow", EjecutorFalso)
+
+    argumentos = ArgumentosDataflowScript(
+        conexiones=None,
+        conexiones_contenido=conexiones,
+        ejecucion_id="secretos-json-1",
+        dataflow_script_contenido=script,
+        resultado=None,
+        secretos=(("POSTGRES_BANCOLOMBIA", "usuario:clave-cli"),),
+    )
+
+    codigo = ejecutor_dataflow.ejecutar_dataflow(argumentos)
+
+    assert codigo == 0
+    assert capturado["secretos"].obtener("POSTGRES_BANCOLOMBIA") == "usuario:clave-cli"
+    assert capturado["secretos"].obtener("SFTP_PRIVATE_KEY_B64") == "base64-json"
+    salida = capsys.readouterr().out
+    assert "clave-json" not in salida
+    assert "base64-json" not in salida
+
+
+def test_motor_secretos_json_invalido_no_crea_spark(monkeypatch, capsys):
+    monkeypatch.setenv("MOTOR_SECRETOS_JSON", "{json-invalido")
+    spark_creado = False
+
+    def crear_sesion(*args):
+        nonlocal spark_creado
+        spark_creado = True
+        return SparkFalso()
+
+    monkeypatch.setattr(ejecutor_dataflow, "_crear_sesion_dataflow", crear_sesion)
+    argumentos = ArgumentosDataflowScript(
+        conexiones=None,
+        conexiones_contenido='{"version":1,"jdbc":[],"locales":[],"sftp":[]}',
+        ejecucion_id="secretos-json-invalido",
+        dataflow_script_contenido="[Ventas]: LOAD id FROM 'ventas.csv';",
+        resultado=None,
+    )
+
+    codigo = ejecutor_dataflow.ejecutar_dataflow(argumentos)
+
+    captura = capsys.readouterr()
+    combinado = captura.out + captura.err
+    assert codigo == 1
+    assert spark_creado is False
+    assert "MOTOR_SECRETOS_JSON no contiene JSON válido" in combinado
+    assert "{json-invalido" not in combinado

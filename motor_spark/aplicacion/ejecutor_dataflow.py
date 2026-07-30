@@ -20,7 +20,11 @@ from motor_spark.conexiones.cargador import (
     cargar_catalogo_contenido,
 )
 from motor_spark.conexiones.modelos import CatalogoConexiones
-from motor_spark.conexiones.secretos import AdministradorSecretos
+from motor_spark.conexiones.secretos import (
+    AdministradorSecretos,
+    cargar_secretos_json_entorno,
+    combinar_secretos,
+)
 from motor_spark.configuracion.argumentos import ArgumentosDataflowScript
 from motor_spark.dataflow_script import (
     ErrorDataflow,
@@ -377,9 +381,18 @@ def _guardar_y_emitir(
 def ejecutar_dataflow(argumentos: ArgumentosDataflowScript) -> int:
     """Ejecuta el pipeline completo y garantiza ``SparkSession.stop()``."""
     spark: Any | None = None
+    # Inicializamos primero con los secretos CLI para poder redactarlos incluso
+    # si MOTOR_SECRETOS_JSON es inválido. Después, dentro del try, reemplazamos
+    # el administrador por la combinación validada de ambos orígenes.
     secretos = AdministradorSecretos(dict(argumentos.secretos))
 
     try:
+        secretos = AdministradorSecretos(
+            combinar_secretos(
+                desde_json=cargar_secretos_json_entorno(),
+                explicitos=dict(argumentos.secretos),
+            )
+        )
         contenido, errores = _leer_script(argumentos)
         if errores:
             resultado_error = _construir_resultado_error_dataflow(argumentos, errores)

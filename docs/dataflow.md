@@ -142,7 +142,22 @@ El script solo referencia nombres lógicos de `LIB CONNECT TO` y `lib://`. Las U
 }
 ```
 
-Los secretos no se guardan en el catálogo. El resolvedor admite variables de entorno o valores inyectados mediante `--secreto`.
+Los secretos no se guardan en el catálogo. El resolvedor admite variables de entorno individuales, valores inyectados mediante `--secreto` o un objeto JSON completo en `MOTOR_SECRETOS_JSON`.
+
+Para Talend/TMC se recomienda un contexto de tipo `Password` llamado `SECRETOS_JSON` y pasarlo al proceso como variable de entorno:
+
+```json
+{
+  "POSTGRES_BANCOLOMBIA": "neondb_owner:contraseña",
+  "SFTP_PRIVATE_KEY_B64": "LS0tLS1CRUdJTiBPUEVOU1NI..."
+}
+```
+
+```text
+MOTOR_SECRETOS_JSON = context.SECRETOS_JSON
+```
+
+El JSON debe ser un objeto cuyas claves tengan formato de variable de entorno y cuyos valores sean cadenas no vacías de una sola línea. El motor nunca imprime el objeto. La precedencia es: `--secreto` explícito, luego `MOTOR_SECRETOS_JSON` y finalmente variables de entorno individuales.
 
 SFTP admite exactamente uno de estos modos:
 
