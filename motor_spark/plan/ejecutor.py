@@ -628,9 +628,20 @@ class EjecutorPlanDataflow:
             )
 
         dataframe = self._exigir_tabla(operacion.tabla_origen)
-        uri = UriLib.parsear(operacion.destino)
-        conexion_local = self._catalogo.buscar_local(uri.conexion)
-        conexion_sftp = self._catalogo.buscar_sftp(uri.conexion)
+        nombre_conexion = UriLib.obtener_conexion(operacion.destino)
+        conexion_local = self._catalogo.buscar_local(nombre_conexion)
+        conexion_sftp = self._catalogo.buscar_sftp(nombre_conexion)
+        conexion = conexion_local or conexion_sftp
+
+        if conexion is None:
+            raise ErrorEjecucionPlan(
+                f"Conexión de publicación no encontrada: {nombre_conexion!r}"
+            )
+
+        uri = UriLib.parsear(
+            operacion.destino,
+            ruta_base=conexion.ruta_base,
+        )
 
         if conexion_local is not None:
             manifiesto = self._publicar_local(
@@ -644,9 +655,9 @@ class EjecutorPlanDataflow:
                 uri,
                 conexion_sftp,
             )
-        else:
+        else:  # pragma: no cover - ``conexion`` ya descartó este caso.
             raise ErrorEjecucionPlan(
-                f"Conexión de publicación no encontrada: {uri.conexion!r}"
+                f"Conexión de publicación no encontrada: {nombre_conexion!r}"
             )
 
         self._publicaciones.append(manifiesto.a_dict())

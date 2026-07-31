@@ -8,6 +8,7 @@ from motor_spark.conexiones.modelos import (
 )
 from motor_spark.conexiones.secretos import AdministradorSecretos
 from motor_spark.plan.ejecutor import EjecutorPlanDataflow
+from motor_spark.plan.modelos import Publicar
 
 
 def test_publicar_sftp_con_clave_no_exige_secreto_usuario_password(tmp_path):
@@ -90,3 +91,41 @@ def test_publicar_sftp_decodifica_clave_desde_secreto_base64(tmp_path):
     assert kwargs["passphrase"] is None
     assert "clave_privada" not in kwargs
     assert "password" not in kwargs
+
+
+def test_publicar_sftp_normaliza_ruta_generada_por_dataflow():
+    conexion = ConexionSftp(
+        nombre="Bancolombia prueba:SFTP",
+        host="sftp.example",
+        usuario="usuario",
+        secreto_clave_privada_nombre="SFTP_PRIVATE_KEY_B64",
+        ruta_base="/upload",
+        allowlist=(CampoAllowlist(esquema="", tabla="ventas_curadas.csv"),),
+    )
+    ejecutor = EjecutorPlanDataflow(
+        spark=MagicMock(),
+        catalogo=CatalogoConexiones(sftp=(conexion,)),
+        secretos=AdministradorSecretos(),
+        ejecucion_id="sftp-dataflow-test",
+    )
+    ejecutor.registrar_tabla("Ventas", MagicMock())
+    manifiesto = MagicMock()
+    manifiesto.a_dict.return_value = {"archivo": "ventas_curadas.csv"}
+
+    with patch.object(
+        ejecutor,
+        "_publicar_sftp",
+        return_value=manifiesto,
+    ) as publicar:
+        ejecutor._publicar(
+            Publicar(
+                id="publicar-dataflow",
+                tabla_origen="Ventas",
+                destino=(
+                    "lib://Bancolombia prueba:SFTP//upload/ventas_curadas.csv"
+                ),
+                formato="txt",
+            )
+        )
+
+    assert publicar.call_args.args[1].ruta == "ventas_curadas.csv"

@@ -66,6 +66,30 @@ class TestUriLib:
         with pytest.raises(ValueError, match="no puede ser absoluta"):
             UriLib.parsear("lib://mi_conexion//etc/passwd.csv")
 
+    def test_parsear_uri_dataflow_relativiza_ruta_base_duplicada(self):
+        resultado = UriLib.parsear(
+            "lib://Bancolombia prueba:SFTP//upload/ventas_curadas.csv",
+            ruta_base="/upload",
+        )
+
+        assert resultado.conexion == "Bancolombia prueba:SFTP"
+        assert resultado.ruta == "ventas_curadas.csv"
+
+    @pytest.mark.parametrize(
+        "ruta",
+        [
+            "//otra/ventas_curadas.csv",
+            "//upload-falso/ventas_curadas.csv",
+            "//upload/../ventas_curadas.csv",
+        ],
+    )
+    def test_parsear_uri_dataflow_rechaza_absoluta_fuera_de_ruta_base(self, ruta):
+        with pytest.raises(ValueError):
+            UriLib.parsear(
+                f"lib://Bancolombia prueba:SFTP{ruta}",
+                ruta_base="/upload",
+            )
+
     def test_parsear_uri_destino_no_csv_o_txt_rechazado(self):
         with pytest.raises(ValueError, match="Destino debe ser .csv o .txt"):
             UriLib.parsear("lib://mi_conexion/datos/salida.pdf")

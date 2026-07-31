@@ -81,7 +81,12 @@ class UriLib:
     PATRON = re.compile(r"^lib://([^/]+)/(.+)$")
 
     @classmethod
-    def parsear(cls, uri: str) -> UriParseResult:
+    def parsear(
+        cls,
+        uri: str,
+        *,
+        ruta_base: str | None = None,
+    ) -> UriParseResult:
         if not isinstance(uri, str):
             raise ValueError(f"URI debe ser string, recibido {type(uri).__name__}")  # noqa: TRY004
         match = cls.PATRON.match(uri)
@@ -89,8 +94,30 @@ class UriLib:
             raise ValueError(f"URI invalida: {uri}")
         conexion_raw, ruta_raw = match.groups()
         conexion = cls._validar_conexion(conexion_raw)
+        if ruta_raw.startswith("/") and ruta_base is not None:
+            ruta_raw = cls._relativizar_ruta_base(ruta_raw, ruta_base)
         ruta = cls._validar_ruta(ruta_raw)
         return UriParseResult(conexion=conexion, ruta=ruta)
+
+    @classmethod
+    def obtener_conexion(cls, uri: str) -> str:
+        if not isinstance(uri, str):
+            raise ValueError(f"URI debe ser string, recibido {type(uri).__name__}")  # noqa: TRY004
+        match = cls.PATRON.match(uri)
+        if not match:
+            raise ValueError(f"URI invalida: {uri}")
+        return cls._validar_conexion(match.group(1))
+
+    @classmethod
+    def _relativizar_ruta_base(cls, ruta: str, ruta_base: str) -> str:
+        base = "/" + ruta_base.strip("/")
+        if base == "/":
+            return ruta.removeprefix("/")
+
+        prefijo = base + "/"
+        if not ruta.startswith(prefijo):
+            raise ValueError("Ruta absoluta no coincide con la ruta base configurada")
+        return ruta.removeprefix(prefijo)
 
     @classmethod
     def _validar_conexion(cls, valor: str) -> str:
