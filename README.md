@@ -25,6 +25,24 @@ En el servidor puede instalarse solo producción:
 pip install -r requirements.txt
 ```
 
+### Virtualenv propiedad de root
+
+Si `.venv` ya existe y pertenece a `root`, el usuario que despliega no podrá
+actualizar sus paquetes directamente. Sin cambiar el propietario, usa el
+intérprete de esa virtualenv con `sudo`:
+
+```bash
+sudo /srv/talend-motor/motor/.venv/bin/python \
+  -m pip install --upgrade pip
+
+sudo /srv/talend-motor/motor/.venv/bin/python \
+  -m pip install -r /srv/talend-motor/motor/requirements.txt
+```
+
+No uses `sudo pip install ...`, pues podría modificar el Python global en vez
+de la virtualenv. Mientras `.venv` pertenezca a `root`, sus futuras
+actualizaciones también requerirán `sudo`.
+
 ## Ejecución compatible
 
 ```bash
@@ -64,6 +82,24 @@ python motor.py \
 Al omitir `--resultado`, el motor entrega únicamente `RESULTADO_MOTOR={...}` por consola.
 
 El script puede enviarse como ruta con `--dataflow-script` o directamente como texto con `--dataflow-script-contenido`. Ambos modos son mutuamente excluyentes.
+
+### Drivers JDBC
+
+Los drivers JDBC son JAR de la JVM y no se instalan mediante `pip`. Para PostgreSQL, inicia el motor con el driver disponible para Spark:
+
+```bash
+PYSPARK_PYTHON="$PWD/.venv/bin/python" \
+PYSPARK_DRIVER_PYTHON="$PWD/.venv/bin/python" \
+./.venv/bin/spark-submit \
+  --packages org.postgresql:postgresql:42.7.7 \
+  motor.py \
+  --dataflow-script-contenido "$SCRIPT_QLIK" \
+  --conexiones-contenido "$CONEXIONES_JSON" \
+  --secreto "POSTGRES_BANCO=$POSTGRES_BANCO" \
+  --ejecucion-id ejecucion-001
+```
+
+`POSTGRES_BANCO` debe contener el valor `usuario:clave`. El primer arranque descarga el artefacto desde Maven; en entornos sin acceso a Internet, descarga el JAR durante el empaquetado y usa `--jars /ruta/postgresql-42.7.7.jar`.
 
 ## Estructura
 
