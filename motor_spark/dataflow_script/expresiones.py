@@ -263,13 +263,23 @@ class CompiladorExpresion:
                     codigo="EXPR_INDEXREGEX_OCCURRENCE",
                 )
 
-        # regexp_instr devuelve exactamente la posición 1-based y 0 cuando no
-        # existe coincidencia, que es el contrato de Qlik.
-        return pyspark.sql.functions.regexp_instr(
-            cadena,
-            pyspark.sql.functions.lit(patron),
-            ocurrencia,
-        )
+        patron_compilado = re.compile(patron)
+
+        def obtener_posicion(valor: Any) -> int | None:
+            if valor is None:
+                return None
+            for indice, coincidencia in enumerate(
+                patron_compilado.finditer(str(valor)),
+                start=1,
+            ):
+                if indice == ocurrencia:
+                    return coincidencia.start() + 1
+            return 0
+
+        # PySpark 3.4 no expone regexp_instr en functions. La UDF conserva su
+        # posición 1-based, ocurrencia y propagación de NULL sin depender de
+        # una versión posterior de la API Python.
+        return pyspark.sql.functions.udf(obtener_posicion, "integer")(cadena)
 
     def _funcion_num(self, expr: Expresion) -> Column:
         pyspark = __import__("pyspark")

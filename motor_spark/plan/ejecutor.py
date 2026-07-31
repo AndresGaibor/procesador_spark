@@ -603,7 +603,7 @@ class EjecutorPlanDataflow:
             .write.mode("overwrite")
             .option("header", "true")
             .option("encoding", "UTF-8")
-            .csv(str(salida_spark))
+            .csv(salida_spark.resolve().as_uri())
         )
         partes = sorted(salida_spark.glob("part-*.csv"))
         if len(partes) != 1:

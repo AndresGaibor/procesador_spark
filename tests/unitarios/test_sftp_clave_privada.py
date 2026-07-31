@@ -129,3 +129,34 @@ def test_publicar_sftp_normaliza_ruta_generada_por_dataflow():
         )
 
     assert publicar.call_args.args[1].ruta == "ventas_curadas.csv"
+
+
+def test_materializar_csv_usa_uri_de_filesystem_local(tmp_path):
+    ejecutor = EjecutorPlanDataflow(
+        spark=MagicMock(),
+        catalogo=CatalogoConexiones(),
+        secretos=AdministradorSecretos(),
+        ejecucion_id="staging-local-test",
+    )
+    dataframe = MagicMock()
+    escritor = MagicMock()
+    dataframe.coalesce.return_value.write = escritor
+    escritor.mode.return_value = escritor
+    escritor.option.return_value = escritor
+
+    def escribir_csv(uri: str) -> None:
+        assert uri == (tmp_path / "spark-output").as_uri()
+        directorio = tmp_path / "spark-output"
+        directorio.mkdir()
+        (directorio / "part-00000.csv").write_text("id\n1\n", encoding="utf-8")
+
+    escritor.csv.side_effect = escribir_csv
+
+    staged = ejecutor._materializar_csv_unico(
+        dataframe,
+        tmp_path,
+        "salida.csv",
+    )
+
+    assert staged == tmp_path / "salida.csv"
+    assert staged.read_text(encoding="utf-8") == "id\n1\n"

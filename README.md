@@ -85,7 +85,17 @@ El script puede enviarse como ruta con `--dataflow-script` o directamente como t
 
 ### Drivers JDBC
 
-Los drivers JDBC son JAR de la JVM y no se instalan mediante `pip`. Para PostgreSQL, inicia el motor con el driver disponible para Spark:
+El wrapper de servidor `spark-talend-submit` detecta los drivers declarados en
+`--conexiones-contenido` y añade automáticamente paquetes Maven aprobados antes
+de iniciar Spark. El catálogo declara únicamente la clase, por ejemplo
+`org.postgresql.Driver`; nunca define coordenadas Maven arbitrarias.
+
+Los drivers aprobados son PostgreSQL, MySQL, MariaDB y SQL Server. El primer
+arranque descarga el JAR desde Maven y Spark lo reutiliza desde su caché. Un
+driver no registrado falla antes de ejecutar el Dataflow.
+
+En una ejecución manual sin el wrapper, los drivers JDBC son JAR de la JVM y no
+se instalan mediante `pip`. Para PostgreSQL, inicia el motor con el driver disponible para Spark:
 
 ```bash
 PYSPARK_PYTHON="$PWD/.venv/bin/python" \

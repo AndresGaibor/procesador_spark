@@ -66,6 +66,27 @@ def test_indexregex_devuelve_posicion_inicial_uno_based(spark_local):
     assert resultados == [5, 0]
 
 
+def test_indexregex_respeta_ocurrencia_y_nulos(spark_local):
+    dataframe = spark_local.createDataFrame(
+        [("a-12-b-34",), (None,)],
+        ["texto"],
+    )
+    expresion = Expresion(
+        tipo=TipoExpresion.FUNCION,
+        valor="INDEXREGEX",
+        hijos=(_columna("texto"), _texto(r"\d+"), _numero(2)),
+    )
+
+    resultados = [
+        fila.posicion
+        for fila in dataframe.select(
+            CompiladorExpresion().compilar(expresion).alias("posicion")
+        ).collect()
+    ]
+
+    assert resultados == [8, None]
+
+
 def test_window_wrank_modo_uno_con_empates(spark_local):
     dataframe = spark_local.createDataFrame(
         [
