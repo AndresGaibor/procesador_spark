@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from motor_spark.compartido.eventos_consola import emitir
+from motor_spark.conexiones.base_destino import resolver_base_destino
 from motor_spark.conexiones.cargador import (
     cargar_catalogo,
     cargar_catalogo_contenido,
@@ -37,6 +38,7 @@ from motor_spark.dataflow_script.limites import LIMITE_TAMANIO_ARCHIVO
 from motor_spark.infraestructura.resultados.escritor_json import guardar_resultado
 from motor_spark.plan import PlanDataflow, compilar, serializar_plan
 from motor_spark.plan.ejecutor import EjecutorPlanDataflow, ErrorEjecucionPlan
+
 
 
 class ErrorDataflowInesperado(RuntimeError):
@@ -508,6 +510,14 @@ def ejecutar_dataflow(argumentos: ArgumentosDataflowScript) -> int:
         # El catálogo se carga después de compilar: un script inválido nunca
         # provoca lecturas de configuración ni creación de recursos externos.
         catalogo = _cargar_catalogo_argumentos(argumentos)
+        config_base_destino = None
+        if argumentos.base_destino:
+            config_base_destino = resolver_base_destino(
+                argumentos.base_destino,
+                catalogo=catalogo,
+                secretos=secretos,
+            )
+
         nombre_aplicacion = (
             Path(argumentos.dataflow_script).stem
             if argumentos.dataflow_script
@@ -522,7 +532,9 @@ def ejecutar_dataflow(argumentos: ArgumentosDataflowScript) -> int:
             catalogo=catalogo,
             secretos=secretos,
             ejecucion_id=argumentos.ejecucion_id,
+            base_destino=config_base_destino,
         )
+
         metricas = ejecutor.ejecutar(plan)
 
         resultado = {

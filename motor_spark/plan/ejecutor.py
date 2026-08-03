@@ -14,6 +14,7 @@ import shutil
 from pathlib import Path, PurePosixPath
 from typing import Any, ClassVar
 
+from motor_spark.conexiones.base_destino import ConfiguracionBaseDestino
 from motor_spark.conexiones.modelos import (
     CatalogoConexiones,
     ConexionLocal,
@@ -78,6 +79,7 @@ class EjecutorPlanDataflow:
         catalogo: CatalogoConexiones,
         secretos: AdministradorSecretos,
         ejecucion_id: str,
+        base_destino: ConfiguracionBaseDestino | None = None,
     ) -> None:
         if not ejecucion_id.strip():
             raise ValueError("ejecucion_id no puede estar vacío")
@@ -85,9 +87,11 @@ class EjecutorPlanDataflow:
         self._catalogo = catalogo
         self._secretos = secretos
         self._ejecucion_id = ejecucion_id
+        self._base_destino = base_destino
         self._tablas: dict[str, Any] = {}
         self._publicaciones: list[dict[str, Any]] = []
         self._operaciones_ejecutadas = 0
+
 
     def registrar_tabla(
         self,
@@ -628,6 +632,33 @@ class EjecutorPlanDataflow:
             )
 
         dataframe = self._exigir_tabla(operacion.tabla_origen)
+
+        if self._base_destino is not None:
+            try:
+                uri = UriLib.parsear(operacion.destino)
+                nombre_tabla = PurePosixPath(uri.ruta).stem
+                if not nombre_tabla:
+                    nombre_tabla = operacion.tabla_origen
+            except Exception:
+                nombre_tabla = operacion.tabla_origen
+
+            nombre_tabla_limpio = re.sub(r"[^A-Za-z0-9_]", "_", nombre_tabla)
+            opciones = self._base_destino.a_opciones_jdbc(nombre_tabla_limpio)
+
+            writer = dataframe.write.mode(self._base_destino.modo).format("jdbc")
+            for k, v in opciones.items():
+                writer = writer.option(k, v)
+            writer.save()
+
+            manifiesto_bd = {
+                "tipo": "base_destino",
+                "tabla": opciones["dbtable"],
+                "url": self._base_destino.url,
+                "tabla_origen": operacion.tabla_origen,
+            }
+            self._publicaciones.append(manifiesto_bd)
+            return
+
         nombre_conexion = UriLib.obtener_conexion(operacion.destino)
         conexion_local = self._catalogo.buscar_local(nombre_conexion)
         conexion_sftp = self._catalogo.buscar_sftp(nombre_conexion)
@@ -661,6 +692,7 @@ class EjecutorPlanDataflow:
             )
 
         self._publicaciones.append(manifiesto.a_dict())
+
 
     def _publicar_local(
         self,

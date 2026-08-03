@@ -1,3 +1,7 @@
+from motor_spark.conexiones.base_destino import (
+    ConfiguracionBaseDestino,
+    resolver_base_destino,
+)
 from motor_spark.conexiones.cargador import (
     CargadorConexiones,
     ResolvedorConexiones,
@@ -35,6 +39,7 @@ __all__ = [
     "ConexionJdbc",
     "ConexionLocal",
     "ConexionSftp",
+    "ConfiguracionBaseDestino",
     "ResolvedorConexiones",
     "SanitizadorInput",
     "TipoConexion",
@@ -46,4 +51,6 @@ __all__ = [
     "cargar_secretos_json_entorno",
     "combinar_secretos",
     "crear_resolvedor",
+    "resolver_base_destino",
 ]
+

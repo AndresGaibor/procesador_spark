@@ -14,6 +14,7 @@ class ArgumentosEjecucion:
     esquema: str
     resultado: str | None
     ejecucion_id: str
+    base_destino: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +28,7 @@ class ArgumentosDataflowScript:
     solo_compilar: bool = False
     plan_salida: str | None = None
     secretos: tuple[tuple[str, str], ...] = ()
+    base_destino: str | None = None
 
     @property
     def origen_script(self) -> str:
@@ -62,6 +64,11 @@ def _crear_parser_receta() -> argparse.ArgumentParser:
     )
     parser.add_argument("--resultado", default=None)
     parser.add_argument("--ejecucion-id", required=True)
+    parser.add_argument(
+        "--base-destino",
+        default=None,
+        help="Configuración o ruta a JSON de la base de datos destino.",
+    )
 
     return parser
 
@@ -137,6 +144,11 @@ def _crear_parser_dataflow_script() -> argparse.ArgumentParser:
         help="Secreto inyectado en memoria para una referencia del catalogo.",
     )
     parser.add_argument(
+        "--base-destino",
+        default=None,
+        help="Configuración o ruta a JSON de la base de datos destino.",
+    )
+    parser.add_argument(
         "--solo-compilar",
         action="store_true",
         default=False,
@@ -184,6 +196,7 @@ def analizar_argumentos(
             esquema=valores_receta.esquema,
             resultado=valores_receta.resultado,
             ejecucion_id=valores_receta.ejecucion_id,
+            base_destino=valores_receta.base_destino,
         )
 
     parser_dataflow = _crear_parser_dataflow_script()
@@ -230,4 +243,6 @@ def analizar_argumentos(
         solo_compilar=valores_df.solo_compilar,
         plan_salida=valores_df.plan_salida,
         secretos=secretos,
+        base_destino=valores_df.base_destino,
     )
+
