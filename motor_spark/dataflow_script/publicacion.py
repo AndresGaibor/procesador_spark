@@ -94,8 +94,11 @@ class UriLib:
             raise ValueError(f"URI invalida: {uri}")
         conexion_raw, ruta_raw = match.groups()
         conexion = cls._validar_conexion(conexion_raw)
-        if ruta_raw.startswith("/") and ruta_base is not None:
-            ruta_raw = cls._relativizar_ruta_base(ruta_raw, ruta_base)
+        if ruta_raw.startswith("/"):
+            if ruta_base is not None:
+                ruta_raw = cls._relativizar_ruta_base(ruta_raw, ruta_base)
+            else:
+                ruta_raw = ruta_raw.lstrip("/")
         ruta = cls._validar_ruta(ruta_raw)
         return UriParseResult(conexion=conexion, ruta=ruta)
 

@@ -8,6 +8,7 @@ database, schema, usuario) de los secretos sensibles almacenados en
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -28,14 +29,41 @@ class ConfiguracionBaseDestino:
 
     def a_opciones_jdbc(self, tabla_ref: str) -> dict[str, str]:
         """Devuelve las opciones requeridas por PySpark DataFrameWriter JDBC."""
-        dbtable = f"{self.esquema}.{tabla_ref}" if self.esquema else tabla_ref
+        nombre_tabla = str(tabla_ref).strip().lower()
+        nombre_tabla = nombre_tabla.replace(" ", "_")
+
+        esquema = str(self.esquema).strip() if self.esquema else ""
+        url = str(self.url).strip()
+        path_bd = ""
+        match_bd = re.search(
+            r"jdbc:(?:hive2|impala)://[^/]+/([^;?]+)",
+            url,
+            flags=re.IGNORECASE,
+        )
+        if match_bd:
+            path_bd = match_bd.group(1).strip().strip("/")
+
+        dbtable = nombre_tabla
+        # Si la URL ya apunta a una base activa (por ejemplo default en Hive), no se
+        # debe volver a prefijar el esquema en el dbtable; de lo contrario Spark
+        # emite CREATE TABLE default.<tabla> y Hive falla al ver `default` como palabra reservada.
+        if esquema and not (path_bd and esquema.lower() == path_bd.lower()):
+            dbtable = f"{esquema}.{nombre_tabla}"
+
         opciones = {
-            "url": self.url,
+            "url": url,
             "dbtable": dbtable,
             "user": self.usuario,
             "password": self.password,
             "driver": self.driver,
         }
+        if re.search(r"jdbc:(?:hive2|impala)", url, flags=re.IGNORECASE) or re.search(r"hive|impala", self.driver, flags=re.IGNORECASE):
+            # El driver JDBC de Hive/Impala no soporta `PreparedStatement.addBatch()`.
+            # Se conserva `batchsize=1` como lo pidió el usuario; la compatibilidad se
+            # resuelve en el flujo de escritura con inserción por partición y con
+            # `isolationLevel=NONE` para evitar una ruta transaccional no soportada.
+            opciones["batchsize"] = "1"
+            opciones["isolationLevel"] = "NONE"
         if self.propiedades:
             opciones.update(self.propiedades)
         return opciones
@@ -96,7 +124,14 @@ def resolver_base_destino(
 
     driver = datos.get("driver") or "org.postgresql.Driver"
     esquema = datos.get("schema") or datos.get("esquema")
-    modo = datos.get("modo") or datos.get("save_mode") or "overwrite"
+    tipo_raw = str(datos.get("tipo") or "postgres").lower()
+    url_raw = str(datos.get("url") or datos.get("jdbc_url") or "").lower()
+    modo = datos.get("modo") or datos.get("save_mode")
+    if not modo:
+        if "hive" in tipo_raw or "impala" in tipo_raw or "hive" in url_raw or "impala" in url_raw:
+            modo = "append"
+        else:
+            modo = "overwrite"
     propiedades_raw = datos.get("propiedades") or datos.get("properties") or {}
 
     url = datos.get("url") or datos.get("jdbc_url")

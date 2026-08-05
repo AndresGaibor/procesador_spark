@@ -11,8 +11,22 @@ from __future__ import annotations
 
 import re
 import shutil
+from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path, PurePosixPath
 from typing import Any, ClassVar
+
+from pyspark.sql.types import (
+    BooleanType,
+    DateType,
+    DecimalType,
+    DoubleType,
+    FloatType,
+    IntegerType,
+    LongType,
+    ShortType,
+    TimestampType,
+)
 
 from motor_spark.conexiones.base_destino import ConfiguracionBaseDestino
 from motor_spark.conexiones.modelos import (
@@ -624,6 +638,201 @@ class EjecutorPlanDataflow:
         """Comprueba la ruta completa, no solo el nombre final del archivo."""
         return any(item.tabla == ruta for item in conexion.allowlist)
 
+    @staticmethod
+    def _normalizar_tipo_sql(tipo: Any) -> str:
+        """Normaliza un tipo Spark a una forma de DDL/Impala-Hive aceptable."""
+        nombre_tipo = str(tipo).upper()
+        if hasattr(tipo, "simpleString"):
+            nombre_tipo = str(tipo.simpleString()).upper()
+        elif hasattr(tipo, "typeName"):
+            nombre_tipo = str(tipo.typeName()).upper()
+
+        mapa = {
+            "BYTE": "TINYINT",
+            "SHORT": "SMALLINT",
+            "INT": "INT",
+            "INTEGER": "INT",
+            "LONG": "BIGINT",
+            "BIGINT": "BIGINT",
+            "FLOAT": "FLOAT",
+            "DOUBLE": "DOUBLE",
+            "DECIMAL": "DECIMAL",
+            "BOOLEAN": "BOOLEAN",
+            "STRING": "STRING",
+            "VARCHAR": "STRING",
+            "CHAR": "STRING",
+            "DATE": "DATE",
+            "TIMESTAMP": "TIMESTAMP",
+            "BINARY": "BINARY",
+        }
+        return mapa.get(nombre_tipo, nombre_tipo)
+
+    def _crear_columna_types_hive(self, dataframe: Any) -> str | None:
+        """Construye el string de `createTableColumnTypes` para Hive/Impala."""
+        try:
+            columnas = []
+            for campo in dataframe.schema:
+                nombre = str(campo.name).strip()
+                tipo = self._normalizar_tipo_sql(campo.dataType)
+                columnas.append(f"{nombre} {tipo}")
+            if not columnas:
+                return None
+            return ", ".join(columnas)
+        except Exception:
+            return None
+
+    def _publicar_base_destino_hive_compat(self, dataframe: Any, opciones: dict[str, str]) -> None:
+        """Fallback de escritura para Hive/Impala cuando Spark JDBC no soporta addBatch().
+
+        Se ejecuta en el driver para evitar serializar el ``SparkSession`` dentro de
+        una lambda de partición, lo cual rompe con la restricción de Spark
+        ``CONTEXT_ONLY_VALID_ON_DRIVER``.
+        """
+        columnas = [str(campo.name).strip() for campo in dataframe.schema]
+        if not columnas:
+            raise ErrorEjecucionPlan("No se pudieron identificar columnas para la escritura JDBC compatible")
+
+        esquema_campos = tuple(dataframe.schema)
+        nombres_sql = ", ".join(columnas)
+        url = str(opciones["url"])
+        usuario = str(opciones.get("user") or "")
+        password = str(opciones.get("password") or "")
+        driver = str(opciones.get("driver") or "")
+        jvm = self._spark._jvm
+
+        def _valor_fila(fila: Any, nombre_columna: str) -> Any:
+            if hasattr(fila, "__getitem__"):
+                try:
+                    return fila[nombre_columna]
+                except Exception:
+                    pass
+            return getattr(fila, nombre_columna, None)
+
+        def _escapar_literal(valor: str) -> str:
+            return str(valor).replace("'", "''")
+
+        def _resolver_tipos_destino(conn: Any) -> dict[str, str]:
+            tipos: dict[str, str] = {}
+            try:
+                metadata = conn.getMetaData()
+                if metadata is not None:
+                    schema = None
+                    tabla = opciones["dbtable"]
+                    if "." in tabla:
+                        schema, tabla = tabla.split(".", 1)
+                    columnas_rs = metadata.getColumns(None, schema, tabla, "%")
+                    try:
+                        while columnas_rs.next():
+                            nombre = str(columnas_rs.getString("COLUMN_NAME") or "").strip()
+                            tipo = str(columnas_rs.getString("TYPE_NAME") or "").upper()
+                            if nombre:
+                                tipos[nombre] = tipo
+                    finally:
+                        try:
+                            columnas_rs.close()
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+            if tipos:
+                return tipos
+
+            try:
+                stmt_meta = conn.createStatement()
+                try:
+                    rs_desc = stmt_meta.executeQuery(f"DESCRIBE {opciones['dbtable']}")
+                    try:
+                        while rs_desc.next():
+                            nombre = str(rs_desc.getString(1) or "").strip()
+                            tipo = str(rs_desc.getString(2) or "").upper()
+                            if nombre:
+                                tipos[nombre] = tipo
+                    finally:
+                        try:
+                            rs_desc.close()
+                        except Exception:
+                            pass
+                finally:
+                    try:
+                        stmt_meta.close()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            return tipos
+
+        def _literal_sql(valor: Any, tipo: Any, tipo_destino: str | None = None) -> str:
+            if valor is None:
+                return "NULL"
+            tipo_destino_normalizado = str(tipo_destino or "").upper()
+            if tipo_destino_normalizado in {"STRING", "VARCHAR", "CHAR"}:
+                return f"'{_escapar_literal(str(valor))}'"
+            if tipo_destino_normalizado in {"TINYINT", "SMALLINT", "INT", "BIGINT"}:
+                return str(int(valor))
+            if tipo_destino_normalizado == "DECIMAL":
+                precision = getattr(tipo, "precision", None) or 38
+                scale = getattr(tipo, "scale", None) or 0
+                return f"CAST('{_escapar_literal(str(valor))}' AS DECIMAL({precision},{scale}))"
+            if tipo_destino_normalizado == "DATE":
+                if isinstance(valor, date):
+                    return f"CAST('{valor.isoformat()}' AS DATE)"
+                return f"CAST('{_escapar_literal(str(valor))}' AS DATE)"
+            if tipo_destino_normalizado == "TIMESTAMP":
+                if isinstance(valor, datetime):
+                    valor_iso = valor.isoformat(sep=" ", timespec="microseconds")
+                    return f"CAST('{_escapar_literal(valor_iso)}' AS TIMESTAMP)"
+                return f"CAST('{_escapar_literal(str(valor))}' AS TIMESTAMP)"
+            if isinstance(tipo, DecimalType):
+                precision = getattr(tipo, "precision", None) or 38
+                scale = getattr(tipo, "scale", None) or 0
+                return f"CAST('{_escapar_literal(str(valor))}' AS DECIMAL({precision},{scale}))"
+            if isinstance(tipo, DateType):
+                if isinstance(valor, date):
+                    return f"CAST('{valor.isoformat()}' AS DATE)"
+                return f"CAST('{_escapar_literal(str(valor))}' AS DATE)"
+            if isinstance(tipo, TimestampType):
+                if isinstance(valor, datetime):
+                    valor_iso = valor.isoformat(sep=" ", timespec="microseconds")
+                    return f"CAST('{_escapar_literal(valor_iso)}' AS TIMESTAMP)"
+                return f"CAST('{_escapar_literal(str(valor))}' AS TIMESTAMP)"
+            if isinstance(tipo, BooleanType):
+                return "TRUE" if bool(valor) else "FALSE"
+            if isinstance(tipo, (LongType, IntegerType, ShortType, FloatType, DoubleType)):
+                return str(valor)
+            return f"'{_escapar_literal(str(valor))}'"
+
+        try:
+            if driver:
+                jvm.java.lang.Class.forName(driver)
+
+            filas = dataframe.collect()
+            conn = jvm.java.sql.DriverManager.getConnection(url, usuario, password)
+            conn.setAutoCommit(True)
+            tipos_destino = _resolver_tipos_destino(conn)
+            stmt = conn.createStatement()
+            try:
+                for fila in filas:
+                    valores_sql = []
+                    for campo in esquema_campos:
+                        valor = _valor_fila(fila, str(campo.name))
+                        tipo = campo.dataType
+                        tipo_destino = tipos_destino.get(str(campo.name).strip())
+                        valores_sql.append(_literal_sql(valor, tipo, tipo_destino))
+                    sql_insert = (
+                        f"INSERT INTO {opciones['dbtable']} ({nombres_sql}) "
+                        f"VALUES ({', '.join(valores_sql)})"
+                    )
+                    stmt.executeUpdate(sql_insert)
+            finally:
+                try:
+                    stmt.close()
+                finally:
+                    conn.close()
+        except Exception as exc:
+            raise ErrorEjecucionPlan(
+                f"Fallback JDBC Hive/Impala no pudo completar la inserción: {exc}"
+            ) from exc
+
     def _publicar(self, operacion: Publicar) -> None:
         formato = operacion.formato.strip().lower()
         if formato not in {"txt", "csv"}:
@@ -648,7 +857,35 @@ class EjecutorPlanDataflow:
             writer = dataframe.write.mode(self._base_destino.modo).format("jdbc")
             for k, v in opciones.items():
                 writer = writer.option(k, v)
-            writer.save()
+
+            url_bd = str(self._base_destino.url).lower()
+            driver_bd = str(self._base_destino.driver).lower()
+            if "hive" in url_bd or "impala" in url_bd or "hive" in driver_bd:
+                create_table_types = self._crear_columna_types_hive(dataframe)
+                if create_table_types:
+                    writer = writer.option("createTableColumnTypes", create_table_types)
+
+            try:
+                writer.save()
+            except Exception as exc:
+                texto_error = str(exc)
+                if (
+                    "hive" in url_bd
+                    or "impala" in url_bd
+                    or "hive" in driver_bd
+                ) and (
+                    "addBatch" in texto_error or "SQLFeatureNotSupportedException" in texto_error
+                ):
+                    self._publicar_base_destino_hive_compat(dataframe, opciones)
+                    manifiesto_bd = {
+                        "tipo": "base_destino",
+                        "tabla": opciones["dbtable"],
+                        "url": self._base_destino.url,
+                        "tabla_origen": operacion.tabla_origen,
+                    }
+                    self._publicaciones.append(manifiesto_bd)
+                    return
+                raise
 
             manifiesto_bd = {
                 "tipo": "base_destino",
