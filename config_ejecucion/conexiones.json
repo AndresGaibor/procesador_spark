@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "descripcion": "Dataflow Bancolombia ejecutado por Spark",
+  "jdbc": [
+    {
+      "tipo": "jdbc",
+      "nombre": "Bancolombia prueba:Postgres_BanColombia_Prueba",
+      "url": "jdbc:postgresql://ep-blue-dust-atd8xd5k-pooler.c-9.us-east-1.aws.neon.tech/neondb?sslmode=require",
+      "driver": "org.postgresql.Driver",
+      "secreto_nombre": "POSTGRES_BANCOLOMBIA",
+      "allowlist": [
+        {
+          "esquema": "demo_dataflow",
+          "tabla": "ventas_2025",
+          "campos": []
+        },
+        {
+          "esquema": "demo_dataflow",
+          "tabla": "ventas_2026",
+          "campos": []
+        },
+        {
+          "esquema": "demo_dataflow",
+          "tabla": "clientes",
+          "campos": []
+        },
+        {
+          "esquema": "demo_dataflow",
+          "tabla": "productos",
+          "campos": []
+        },
+        {
+          "esquema": "demo_dataflow",
+          "tabla": "sucursales",
+          "campos": []
+        },
+        {
+          "esquema": "demo_dataflow",
+          "tabla": "vendedores",
+          "campos": []
+        },
+        {
+          "esquema": "demo_dataflow",
+          "tabla": "devoluciones",
+          "campos": []
+        }
+      ],
+      "propiedades": {
+        "fetchsize": "10000"
+      }
+    }
+  ],
+  "locales": [],
+  "sftp": [
+    {
+      "tipo": "sftp",
+      "nombre": "Bancolombia prueba:SFTP",
+      "host": "172.23.16.105",
+      "puerto": 22,
+      "usuario": "sftpqlik",
+      "secreto_clave_privada_nombre": "SFTP_PRIVATE_KEY_B64",
+      "ruta_base": "/upload",
+      "allowlist": [
+        {
+          "esquema": "",
+          "tabla": "ventas_rechazadas.csv",
+          "campos": []
+        },
+        {
+          "esquema": "",
+          "tabla": "ventas_curadas.csv",
+          "campos": []
+        },
+        {
+          "esquema": "",
+          "tabla": "muestra_calidad.csv",
+          "campos": []
+        },
+        {
+          "esquema": "",
+          "tabla": "resumen_mensual.csv",
+          "campos": []
+        }
+      ]
+    }
+  ]
+}

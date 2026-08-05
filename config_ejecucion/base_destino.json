@@ -1,0 +1,8 @@
+{
+  "tipo": "postgres",
+  "host": "ep-blue-dust-atd8xd5k-pooler.c-9.us-east-1.aws.neon.tech",
+  "puerto": 5432,
+  "database": "neondb",
+  "esquema": "public",
+  "secreto_nombre": "POSTGRES_DESTINO"
+}

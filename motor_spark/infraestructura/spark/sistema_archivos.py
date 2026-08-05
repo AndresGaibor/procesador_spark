@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-import grp
+try:
+    import grp
+except ImportError:
+    grp = None
 import os
 import shutil
 from typing import Any
@@ -28,11 +31,14 @@ def preparar_salida_local(ruta: str, modo: str) -> str:
     if os.path.lexists(ruta_local):
         shutil.rmtree(ruta_local)
     os.makedirs(ruta_local, mode=0o2770, exist_ok=False)
-    gid_spark = grp.getgrnam("spark").gr_gid
-    os.chown(ruta_local, -1, gid_spark)
-    os.chmod(ruta_local, 0o2770)
+    if grp is not None and hasattr(os, "chown"):
+        gid_spark = grp.getgrnam("spark").gr_gid
+        os.chown(ruta_local, -1, gid_spark)
+    if hasattr(os, "chmod"):
+        os.chmod(ruta_local, 0o2770)
     emitir(f"SALIDA_LOCAL_PREPARADA={ruta_local} modo_spark=append")
     return "append"
+
 
 
 def _sistema_archivos_para_ruta(spark: Any, ruta: str) -> tuple[Any, Any]:

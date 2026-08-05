@@ -354,15 +354,25 @@ def _ejecutar_operaciones(
 
 def _crear_sesion_dataflow(nombre: str, ejecucion_id: str) -> Any:
     """Crea Spark con semántica estricta y reproducible para Dataflows."""
+    import sys
     from pyspark.sql import SparkSession
+    from motor_spark.configuracion.paquetes_jdbc import resolver_paquetes_jdbc
 
-    return (
+    builder = (
         SparkSession.builder.appName(f"dataflow-{nombre}-{ejecucion_id}")
         .config("spark.sql.caseSensitive", "true")
         .config("spark.sql.ansi.enabled", "true")
         .config("spark.sql.session.timeZone", "UTC")
-        .getOrCreate()
     )
+    try:
+        paquetes = resolver_paquetes_jdbc(sys.argv)
+        if paquetes:
+            builder = builder.config("spark.jars.packages", ",".join(paquetes))
+    except Exception:
+        pass
+
+    return builder.getOrCreate()
+
 
 
 def _guardar_y_emitir(
