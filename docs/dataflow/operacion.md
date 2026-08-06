@@ -1,199 +1,123 @@
-# Runbook de Operación Dataflow
+---
+titulo: Operacion y observabilidad Dataflow
+identificador: OPS-DATAFLOW-001
+tipo: operacion
+estado: vigente
+version: 2.0.0
+propietario: por-asignar
+audiencia:
+  - desarrollo
+  - operaciones
+  - integracion
+creado: 2026-08-06
+ultima_revision: 2026-08-06
+proxima_revision: 2026-11-06
+fuente_de_verdad: true
+confidencialidad: interna
+relacionados:
+  - ./runbook-talend.md
+  - ./talend-contexto.md
+---
 
-## Gates de Release
+# Operacion y observabilidad Dataflow
 
-| Gate | Criterio | Responsable |
-|------|----------|-------------|
-| Tests unitarios | 100% passing | Dev |
-| Tests integracion | 100% passing con Spark local | Dev |
-| Tests diferenciales Qlik | `QLIK_GOLDEN_DIR` validation passed | Dev |
-| Performance baseline | < umbral segun `DATAFLOW_PERF_ROWS` | Dev |
-| Docker compose | `config --quiet` sin errores | Infra |
-| SHA-256 manifest | Consistente con output | Dev |
+> Estado: **CONFIRMADO** para el flujo Talend, Spark 4.2 y PostgreSQL validado.
 
-## Observabilidad
+## Fuente de verdad
 
-### Métricas de Ejecución
+El contrato operativo es la línea `RESULTADO_MOTOR=<json>` emitida por el
+motor. Talend debe capturar la salida estándar para conservarla en
+`tSystem_1_OUTPUT`.
 
-El motor emite eventos contractuales a stdout/stderr en formato `CLAVE=valor`:
+## Resultado exitoso
 
-```
-EJECUCION_INICIO id=<ejecucion_id>
-LECTURA_COMPLETADA filas=<n>
-PASO_INICIO numero=<n> tipo=<tipo>
-PASO_FIN numero=<n> tipo=<tipo> columnas=<cols>
-ESCRITURA_INICIO formato=<fmt>
-ESCRITURA_FIN archivos=<n> bytes=<n>
-RESULTADO_MOTOR=<json>
-```
-
-### Métricas Spark Disponibles
-
-- `spark.executor.duration`: tiempo total del executor en ms
-- `spark.job.duration`: tiempo por job
-- `spark.sql.shuffle.partitions`: numero de particiones shuffle
-- `spark.task.duration`: tiempo por tarea
-- `spark.stage.duration`: tiempo por etapa
-
-Para activar métricas detalladas:
-
-```bash
-export SPARK_CONF="spark.eventLog.enabled=true spark.eventLog.dir=/tmp/spark-events"
-python motor.py --receta receta.json ...
-```
-
-### Logs de Errores
-
-Errores de Spark y JDBC son sanitizados antes de emitirse. El resultado JSON en `RESULTADO_MOTOR` nunca contiene passwords ni secrets del entorno.
-
-```json
-{
-  "estado": "ERROR",
-  "ejecucion_id": "exec-001",
-  "errores": [
-    {
-      "mensaje": "Error de conexion",
-      "codigo": "CONN_ERROR",
-      "ubicacion": null,
-      "ayuda": null
-    }
-  ]
-}
-```
-
-## Payload Talend / TMC
-
-Para invocar el motor desde Talend o TMC:
-
-```bash
-python motor.py \
-  --receta '/path/to/receta.json' \
-  --entrada '/path/to/entrada.csv' \
-  --salida 'file:///srv/talend-motor/salida/' \
-  --esquema 'id:entero|nombre:texto|monto:decimal(12,2)' \
-  --resultado '/tmp/resultado_exec001.json' \
-  --ejecucion-id 'exec-001'
-```
-
-Variables de entorno requeridas en el engine:
-
-| Variable | Descripcion | Ejemplo |
-|----------|-------------|---------|
-| `POSTGRES_PASSWORD` | Password de conexion JDBC | `secret:pass` |
-| `SFTP_PRIVATE_KEY_B64` | Contenido Base64 de la clave privada SFTP | `LS0tLS1CRUdJTi...` |
-
-### Contrato de Resultado
-
-El motor escribe `/tmp/resultado_exec001.json` con:
+Ejemplo estructural, sin datos sensibles:
 
 ```json
 {
   "estado": "COMPLETADO",
-  "ejecucion_id": "exec-001",
-  "total_registros": 15000,
-  "archivo_success": "/srv/talend-motor/salida/_SUCCESS",
-  "cantidad_archivos_parquet": 4,
-  "bytes_parquet": 2097152,
-  "esquema_salida_simple": "..."
+  "ejecucion_id": "<id>",
+  "origen_script": "parametro",
+  "hash_script": "<sha-256>",
+  "hash": "<sha-256-plan>",
+  "operaciones": 72,
+  "operaciones_ejecutadas": 72,
+  "tablas_disponibles": ["<tabla>"],
+  "publicaciones": [
+    {"tipo": "base_destino", "tabla": "public.<tabla>"}
+  ]
 }
 ```
 
-## Rollout Progresivo
+Campos de verificación:
 
-### Fase 1: Canary (1%)
-1. Seleccionar 1% de ejecuciones para usar motor Spark
-2. Monitorizar `RESULTADO_MOTOR.estado` durante 24h
-3. Si tasa de ERROR > 1%, abortar y rollback
+| Campo | Criterio |
+| --- | --- |
+| `estado` | Debe ser `COMPLETADO` |
+| `operaciones` | Número de operaciones compiladas |
+| `operaciones_ejecutadas` | Debe coincidir con `operaciones` |
+| `publicaciones` | Debe incluir todas las tablas destino esperadas |
+| `hash_script` y `hash` | Permiten correlacionar script y plan sin registrar el contenido |
 
-### Fase 2: Beta (10%)
-1. Ampliar a 10% de ejecuciones
-2. Comparar métricas delatadas con Qlik:
-   - Conteo de filas
-   - SHA-256 de salida
-   - Tiempo de ejecución
-3. Si diff > 0, investigar antes de continuar
+## Resultado de error
 
-### Fase 3: Production (100%)
-1. Cambiar todas las ejecuciones a motor Spark
-2. Mantener Qlik como fallback durante 7 dias
-3. Desplegar con feature flag `MOTOR_SPARK_ENABLED=true`
-
-## Rollback a Qlik
-
-Si se detecta degradación critica:
-
-1. **Inmediato**: Desactivar motor Spark
-   ```bash
-   export MOTOR_SPARK_ENABLED=false
-   ```
-
-2. **Verificar**: Confirma que ejecuciones vuelven a Qlik
-   ```bash
-   grep "RESULTADO_MOTOR" /path/to/logs/*.log | grep -c "MOTOR_SPARK"
-   ```
-
-3. **Recompilar**: Si el problema es de datos, no de motor:
-   ```bash
-   rm -rf /tmp/.staging/*
-   python motor.py --receta ...  # re-ejecutar con datos frescos
-   ```
-
-4. **Post-mortem**: Documentar en Jira con:
-   - Timestamp de detección
-   - Logs de error
-   - SHA-256 del manifest que falló
-   - Remediation action items
-
-## Precondiciones
-
-### Runtime
-- [ ] Java 11+ instalado y en PATH
-- [ ] Python 3.10+ con venv activa
-- [ ] PySpark instalado en venv
-- [ ] 8GB RAM mínimo para JVM Spark
-- [ ] Acceso de lectura a `/path/to/entrada.csv`
-- [ ] Acceso de escritura a `/srv/talend-motor/salida/`
-
-### Variables de Entorno
-- [ ] `POSTGRES_PASSWORD` configurado (formato: `user:password`)
-- [ ] `SFTP_PASSWORD` configurado (si se usa SFTP staging)
-- [ ] `MOTOR_SPARK_ENABLED=true` (defecto)
-
-### Networking
-- [ ] Acceso a endpoint JDBC si `leer_jdbc` está en receta
-- [ ] Puerto 5432 PostgreSQL reachable si aplica
-- [ ] Puerto 2222 SFTP reachable si aplica
-
-### Datos
-- [ ] Archivo de entrada existe y es legible
-- [ ] Schema CSV coincide con `--esquema` declarado
-- [ ] Espacio en disco > 2x tamaño de salida esperada
-
-## Bloqueos Externos
-
-| Recurso | Bloqueo | Accion |
-|---------|---------|--------|
-| Qlik Cloud | Licencia activa | Contactar Platform Ops si expira |
-| PostgreSQL | Lock de transaccion | Esperar o matar session_id |
-| SFTP | Upload en progreso | Esperar o limpiar /home/dataflow/upload |
-| HDFS | Replicacion不一致 | `hdfs dfsadmin -refreshNodes` |
-| Talend JobServer | Ejecucion activa | Esperar o cancelar job |
-
-## Comandos de Debug
-
-```bash
-# Ver logs de Spark
-cat /tmp/spark.log 2>/dev/null || echo "No Spark log"
-
-# Ver staging
-ls -la /tmp/.staging/ 2>/dev/null || echo "No staging"
-
-# Ver resultado
-cat /tmp/resultado_exec001.json | python -m json.tool
-
-# Validar compose
-POSTGRES_PASSWORD=test docker compose -f tests/infra/docker-compose.dataflow.yml config --quiet
-
-# Test rapido sin Spark
-python -c "from motor_spark.dataflow_script.publicacion import StagingManager; print('OK')"
+```json
+{
+  "estado": "ERROR",
+  "ejecucion_id": "<id>",
+  "errores": [
+    {"codigo": "ERROREJECUCIONPLAN", "mensaje": "<mensaje redactado>"}
+  ]
+}
 ```
+
+El motor redacta secretos conocidos de los mensajes. No completar los logs con
+credenciales para intentar depurar una conexión.
+
+## Señales de Spark
+
+Una ejecución sana debe mostrar, en orden aproximado:
+
+1. `Running Spark version 4.2.0`.
+2. `Connected to Spark cluster`.
+3. Un executor `RUNNING`.
+4. Consultas `JDBCRDD` para fuentes permitidas.
+5. Jobs `save` para las publicaciones JDBC.
+6. `RESULTADO_MOTOR` con `estado: COMPLETADO`.
+
+La existencia de un executor o de un código de salida Talend `0` no acredita
+una publicación completa por sí sola.
+
+## Incidentes conocidos
+
+| Código o síntoma | Diagnóstico | Remediación |
+| --- | --- | --- |
+| `Failed to get main class in JAR` | `spark-submit` se añadió dos veces al array de Talend | Eliminar el ejecutable literal duplicado |
+| `InvalidClassException` RPC | Master Spark diferente al Spark del driver | Usar driver y master Spark 4.2 compatibles |
+| `Connection refused` al master | Puerto o dirección no escuchan | Usar el master confirmado del runbook |
+| `FAILED_JDBC.CONNECTION` | No se puede abrir una fuente JDBC | Validar catálogo, secreto, red y driver sin registrar valores |
+| `DFS_EMPTY_PLAN` | Script truncado o sin operaciones ejecutables | Verificar contenido Qlik en un único argumento |
+| `RESULTADO_CAPTURADO=false` | Standard Output no se guardó en global | Configurar salida estándar a consola y variable global |
+
+## Advertencias no bloqueantes observadas
+
+| Advertencia | Estado | Acción |
+| --- | --- | --- |
+| PyArrow/Pandas no instalado | CONFIRMADO | Spark usa UDF sin optimización Arrow; no bloqueó la publicación |
+| `VERSION_ESQUEMA` o `VERSION_RECETA` vacíos | CONFIRMADO | Contextos heredados de receta; no afectan Dataflow actual |
+| Native Hadoop library no disponible | CONFIRMADO | Spark usa implementación incorporada; no bloqueó la ejecución |
+
+## Instrumentación temporal Talend
+
+Durante la investigación se añadieron indicadores seguros de longitud y
+presencia de tokens en `tJava_4`: `DF_SCRIPT_LONGITUD`, `DF_SCRIPT_TIENE_*` y
+`CONEXIONES_JSON_LONGITUD`. Tras validar la operación, retirarlos para evitar
+ruido de log. No registrar contenido de script, catálogo ni secretos.
+
+## Validación post-ejecución
+
+1. Confirmar `RESULTADO_MOTOR` completo.
+2. Confirmar las cuatro publicaciones esperadas.
+3. Si el modo destino es `overwrite`, verificar el impacto funcional de la
+   sustitución de tablas antes de habilitar automatización periódica.
+4. Conservar el ID de ejecución y los hashes, no el JSON de secretos.
