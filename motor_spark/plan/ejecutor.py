@@ -634,12 +634,8 @@ class EjecutorPlanDataflow:
         dataframe = self._exigir_tabla(operacion.tabla_origen)
 
         if self._base_destino is not None:
-            try:
-                uri = UriLib.parsear(operacion.destino)
-                nombre_tabla = PurePosixPath(uri.ruta).stem
-                if not nombre_tabla:
-                    nombre_tabla = operacion.tabla_origen
-            except Exception:
+            nombre_tabla = PurePosixPath(operacion.destino.rsplit("/", 1)[-1]).stem
+            if not nombre_tabla:
                 nombre_tabla = operacion.tabla_origen
 
             nombre_tabla_limpio = re.sub(r"[^A-Za-z0-9_]", "_", nombre_tabla)

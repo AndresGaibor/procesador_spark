@@ -83,6 +83,10 @@ class TestBaseDestino(unittest.TestCase):
         paquetes = resolver_paquetes_jdbc(argv)
         self.assertIn("org.postgresql:postgresql:42.7.7", paquetes)
 
+    def test_resolver_paquetes_jdbc_rechaza_base_destino_invalida(self):
+        with self.assertRaises(ValueError):
+            resolver_paquetes_jdbc(["--base-destino", "{json_invalido"])
+
     def test_ejecutor_plan_publicar_base_destino(self):
         spark_mock = MagicMock()
         df_mock = MagicMock()

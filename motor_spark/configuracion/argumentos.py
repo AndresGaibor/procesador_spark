@@ -14,7 +14,6 @@ class ArgumentosEjecucion:
     esquema: str
     resultado: str | None
     ejecucion_id: str
-    base_destino: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,11 +63,6 @@ def _crear_parser_receta() -> argparse.ArgumentParser:
     )
     parser.add_argument("--resultado", default=None)
     parser.add_argument("--ejecucion-id", required=True)
-    parser.add_argument(
-        "--base-destino",
-        default=None,
-        help="Configuración o ruta a JSON de la base de datos destino.",
-    )
 
     return parser
 
@@ -196,7 +190,6 @@ def analizar_argumentos(
             esquema=valores_receta.esquema,
             resultado=valores_receta.resultado,
             ejecucion_id=valores_receta.ejecucion_id,
-            base_destino=valores_receta.base_destino,
         )
 
     parser_dataflow = _crear_parser_dataflow_script()
@@ -245,4 +238,3 @@ def analizar_argumentos(
         secretos=secretos,
         base_destino=valores_df.base_destino,
     )
-

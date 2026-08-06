@@ -70,12 +70,10 @@ def resolver_paquetes_jdbc(argv: Sequence[str]) -> tuple[str, ...]:
     args_bd, _ = parser_bd.parse_known_args(argv)
     if args_bd.base_destino:
         driver_bd = "org.postgresql.Driver"
-        try:
-            from motor_spark.conexiones.base_destino import cargar_json_base_destino
-            datos_bd = cargar_json_base_destino(args_bd.base_destino)
-            driver_bd = datos_bd.get("driver") or driver_bd
-        except Exception:
-            pass
+        from motor_spark.conexiones.base_destino import cargar_json_base_destino
+
+        datos_bd = cargar_json_base_destino(args_bd.base_destino)
+        driver_bd = datos_bd.get("driver") or driver_bd
         paquete_bd = PAQUETES_POR_DRIVER.get(driver_bd)
         if paquete_bd and paquete_bd not in paquetes:
             paquetes.append(paquete_bd)

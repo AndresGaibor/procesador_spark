@@ -40,7 +40,6 @@ from motor_spark.plan import PlanDataflow, compilar, serializar_plan
 from motor_spark.plan.ejecutor import EjecutorPlanDataflow, ErrorEjecucionPlan
 
 
-
 class ErrorDataflowInesperado(RuntimeError):
     """Marca un fallo fuera de los errores esperados del compilador."""
 
